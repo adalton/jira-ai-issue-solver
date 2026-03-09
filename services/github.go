@@ -95,6 +95,14 @@ type GitHubService interface {
 	// Handles both working tree changes and local commits (including merge commits with multiple parents)
 	// Returns empty string if no changes, otherwise returns the commit SHA
 	CreateVerifiedCommitFromLocal(owner, repo, branchName, message, directory string, coAuthorName, coAuthorEmail string) (string, error)
+
+	// SyncWithRemote reconciles the local workspace with the remote branch.
+	// Executes: git fetch origin && git reset --hard origin/<branch>
+	// This is used after API-created commits to align local git state with
+	// the remote. Untracked files are preserved (git reset --hard only
+	// affects tracked files), which is the key property for artifact
+	// persistence across sessions.
+	SyncWithRemote(directory, branch string) error
 }
 
 // fileExists returns true if the file exists, false if it does not exist,
@@ -2060,6 +2068,32 @@ func (s *GitHubServiceImpl) PullChanges(directory, branchName string) error {
 	}
 
 	s.logger.Debug("git pull", fn, zap.String("remote", "origin"), zap.String("branch", branchName), zap.String("stdout", cmd.getStdout()), zap.String("stderr", cmd.getStderr()))
+
+	return nil
+}
+
+// SyncWithRemote reconciles the local workspace with the remote branch by
+// fetching and hard-resetting to the remote ref. Untracked files are
+// preserved because git reset --hard only affects the index and tracked
+// working tree files.
+func (s *GitHubServiceImpl) SyncWithRemote(directory, branch string) error {
+	debugEnabled := s.logger.Core().Enabled(zapcore.DebugLevel)
+	fn := zap.String("function", "SyncWithRemote")
+
+	// Fetch the latest state from the remote.
+	fetchCmd := newGitCommand(s.executor("git", "fetch", "origin"), directory, debugEnabled, true)
+	if err := fetchCmd.run(); err != nil {
+		return fmt.Errorf("failed to fetch from origin: %w, stderr: %s", err, fetchCmd.getStderr())
+	}
+	s.logger.Debug("git fetch origin", fn, zap.String("stdout", fetchCmd.getStdout()), zap.String("stderr", fetchCmd.getStderr()))
+
+	// Reset the working tree and index to match the remote branch.
+	ref := "origin/" + branch
+	resetCmd := newGitCommand(s.executor("git", "reset", "--hard", ref), directory, debugEnabled, true)
+	if err := resetCmd.run(); err != nil {
+		return fmt.Errorf("failed to reset to %s: %w, stderr: %s", ref, err, resetCmd.getStderr())
+	}
+	s.logger.Debug("git reset --hard", fn, zap.String("ref", ref), zap.String("stdout", resetCmd.getStdout()), zap.String("stderr", resetCmd.getStderr()))
 
 	return nil
 }

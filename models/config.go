@@ -347,6 +347,25 @@ type Config struct {
 
 	// Temporary directory for cloning repositories
 	TempDir string `yaml:"temp_dir" mapstructure:"temp_dir" default:"/tmp/jira-ai-issue-solver"`
+
+	// Workspaces configuration for ticket-scoped workspace lifecycle
+	Workspaces WorkspacesConfig `yaml:"workspaces" mapstructure:"workspaces"`
+}
+
+// WorkspacesConfig holds configuration for ticket-scoped workspace management.
+type WorkspacesConfig struct {
+	// BaseDir is the root directory under which per-ticket workspaces are created.
+	// Each workspace is a subdirectory named after the ticket key (e.g., PROJ-123/).
+	BaseDir string `yaml:"base_dir" mapstructure:"base_dir"`
+
+	// TTLDays is the maximum age (in days) before a workspace is eligible
+	// for cleanup, regardless of ticket status. Must be positive.
+	//
+	// If a workspace is cleaned up while its ticket still has an active PR,
+	// the feedback pipeline will self-heal by re-cloning the repository.
+	// However, AI-generated artifacts from prior sessions will be lost.
+	// Set this high enough to cover typical PR review turnaround times.
+	TTLDays int `yaml:"ttl_days" mapstructure:"ttl_days" default:"7"`
 }
 
 // GetProjectConfigForTicket returns the project configuration for a given ticket key
@@ -477,6 +496,10 @@ func LoadConfig(configPath string) (*Config, error) {
 	// Logging configuration
 	bindEnv("logging.level")
 	bindEnv("logging.format")
+
+	// Workspaces configuration
+	bindEnv("workspaces.base_dir")
+	bindEnv("workspaces.ttl_days")
 
 	// Other configuration
 	bindEnv("temp_dir")
@@ -689,6 +712,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ai.max_retries", 5)
 	v.SetDefault("ai.retry_delay_seconds", 2)
 
+	// Workspace defaults
+	v.SetDefault("workspaces.ttl_days", 7)
+
 	// Temp directory defaults
 	v.SetDefault("temp_dir", "/tmp/jira-ai-issue-solver")
 }
@@ -815,6 +841,14 @@ func (c *Config) validate() error {
 	if maxTotalRetryTime > 1800 {
 		return fmt.Errorf("ai config would cause excessive retry time: max_retries(%d) * retry_delay_seconds(%d) = %d seconds (max allowed: 1800 seconds / 30 minutes)",
 			c.AI.MaxRetries, c.AI.RetryDelaySeconds, maxTotalRetryTime)
+	}
+
+	// Validate workspaces configuration
+	if c.Workspaces.BaseDir == "" {
+		return errors.New("workspaces.base_dir is required")
+	}
+	if c.Workspaces.TTLDays <= 0 {
+		return errors.New("workspaces.ttl_days must be positive")
 	}
 
 	return nil

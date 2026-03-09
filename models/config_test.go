@@ -114,6 +114,10 @@ func TestConfig_validateStatusTransitions(t *testing.T) {
 					MaxRetries:            5,
 					RetryDelaySeconds:     2,
 				},
+				Workspaces: WorkspacesConfig{
+					BaseDir: "/tmp/test-workspaces",
+					TTLDays: 7,
+				},
 			},
 			wantErr: false,
 		},
@@ -316,6 +320,9 @@ github:
   private_key_path: "%s"
   bot_username: "test-bot"
   target_branch: "develop"
+workspaces:
+  base_dir: /tmp/test-workspaces
+  ttl_days: 7
 `, tmpKeyPath)
 	tmpfile, err := os.CreateTemp("", "config_test_*.yaml")
 	if err != nil {
@@ -390,6 +397,8 @@ github:
   app_id: 123456
   private_key_path: "%s"
   bot_username: "test-bot"
+workspaces:
+  base_dir: /tmp/test-workspaces
 `, tmpKeyPath)
 	tmpfile, err := os.CreateTemp("", "config_test_*.yaml")
 	if err != nil {
@@ -450,6 +459,9 @@ github:
   app_id: 123456
   private_key_path: "%s"
   bot_username: "test-bot"
+workspaces:
+  base_dir: /tmp/test-workspaces
+  ttl_days: 7
 `, tmpKeyPath)
 	tmpfile, err := os.CreateTemp("", "config_test_*.yaml")
 	if err != nil {
@@ -525,6 +537,9 @@ github:
   private_key_path: "%s"
   bot_username: "test-bot"
   target_branch: "develop"
+workspaces:
+  base_dir: /tmp/test-workspaces
+  ttl_days: 7
 `, tmpKeyPath)
 	tmpfile, err := os.CreateTemp("", "config_test_*.yaml")
 	if err != nil {
@@ -689,6 +704,9 @@ github:
   app_id: 123456
   private_key_path: "%s"
   bot_username: "test-bot"
+workspaces:
+  base_dir: /tmp/test-workspaces
+  ttl_days: 7
 `, tmpKeyPath)
 
 	tempFile, err := os.CreateTemp("", "config_test_*.yaml")
@@ -797,6 +815,10 @@ func TestConfig_GitHubAppAuthentication(t *testing.T) {
 					GenerateDocumentation: true,
 					MaxRetries:            5,
 					RetryDelaySeconds:     2,
+				},
+				Workspaces: WorkspacesConfig{
+					BaseDir: "/tmp/test-workspaces",
+					TTLDays: 7,
 				},
 			},
 			wantErr: false,
@@ -1010,6 +1032,9 @@ github:
   app_id: 123456
   private_key_path: "` + tempKeyFile.Name() + `"
   bot_username: "test-bot[bot]"
+workspaces:
+  base_dir: /tmp/test-workspaces
+  ttl_days: 7
 `
 	tmpfile, err := os.CreateTemp("", "config_test_*.yaml")
 	if err != nil {
@@ -1137,6 +1162,8 @@ func TestConfig_validateAIConfiguration(t *testing.T) {
 			config.GitHub.BotUsername = "test-bot"
 			config.AI.MaxRetries = tt.maxRetries
 			config.AI.RetryDelaySeconds = tt.retryDelay
+			config.Workspaces.BaseDir = "/tmp/test-workspaces"
+			config.Workspaces.TTLDays = 7
 
 			err := config.validate()
 
@@ -1149,6 +1176,94 @@ func TestConfig_validateAIConfiguration(t *testing.T) {
 					t.Errorf("Expected error containing '%s', got nil", tt.expectedError)
 				} else if !contains(err.Error(), tt.expectedError) {
 					t.Errorf("Expected error containing '%s', got: %v", tt.expectedError, err)
+				}
+			}
+		})
+	}
+}
+
+func TestConfig_validateWorkspacesConfiguration(t *testing.T) {
+	tests := []struct {
+		name          string
+		baseDir       string
+		ttlDays       int
+		expectedError string
+	}{
+		{
+			name:          "valid workspace config",
+			baseDir:       "/var/lib/ai-bot/workspaces",
+			ttlDays:       7,
+			expectedError: "",
+		},
+		{
+			name:          "missing base_dir",
+			baseDir:       "",
+			ttlDays:       7,
+			expectedError: "workspaces.base_dir is required",
+		},
+		{
+			name:          "zero ttl_days",
+			baseDir:       "/tmp/workspaces",
+			ttlDays:       0,
+			expectedError: "workspaces.ttl_days must be positive",
+		},
+		{
+			name:          "negative ttl_days",
+			baseDir:       "/tmp/workspaces",
+			ttlDays:       -1,
+			expectedError: "workspaces.ttl_days must be positive",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			keyPath := createTempKeyFile(t)
+			defer func() { _ = os.Remove(keyPath) }()
+
+			config := &Config{}
+			config.AIProvider = "claude"
+			config.Logging.Level = "info"
+			config.Logging.Format = "console"
+			config.Jira.BaseURL = "https://test.atlassian.net"
+			config.Jira.Username = "test@example.com"
+			config.Jira.APIToken = "test-token"
+			config.Jira.AssigneeToGitHubUsername = map[string]string{
+				"test@example.com": "test-user",
+			}
+			config.Jira.Projects = []ProjectConfig{
+				{
+					ProjectKeys: ProjectKeys{"TEST"},
+					StatusTransitions: TicketTypeStatusTransitions{
+						"Bug": StatusTransitions{
+							Todo:       "To Do",
+							InProgress: "In Progress",
+							InReview:   "In Review",
+						},
+					},
+					ComponentToRepo: ComponentToRepoMap{
+						"component1": "https://github.com/test/repo1.git",
+					},
+				},
+			}
+			config.GitHub.AppID = 123456
+			config.GitHub.PrivateKeyPath = keyPath
+			config.GitHub.BotUsername = "test-bot"
+			config.AI.MaxRetries = 5
+			config.AI.RetryDelaySeconds = 2
+			config.Workspaces.BaseDir = tt.baseDir
+			config.Workspaces.TTLDays = tt.ttlDays
+
+			err := config.validate()
+
+			if tt.expectedError == "" {
+				if err != nil {
+					t.Errorf("expected no error, got: %v", err)
+				}
+			} else {
+				if err == nil {
+					t.Errorf("expected error containing %q, got nil", tt.expectedError)
+				} else if !contains(err.Error(), tt.expectedError) {
+					t.Errorf("expected error containing %q, got: %v", tt.expectedError, err)
 				}
 			}
 		})

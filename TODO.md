@@ -81,7 +81,7 @@ pipeline.
 
 ---
 
-### Task 2: Workspace Manager and GitService SyncWithRemote
+### Task 2: Workspace Manager and GitService SyncWithRemote ✅
 
 Introduce workspace lifecycle management and the `SyncWithRemote` git
 operation that underpins it. Workspaces are scoped to tickets (not jobs),

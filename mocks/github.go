@@ -29,6 +29,7 @@ type MockGitHubService struct {
 	GetForkCloneURLForUserFunc        func(owner, repo, forkOwner string) (string, error)
 	CommitChangesViaAPIFunc           func(owner, repo, branchName, message, directory string, coAuthorName, coAuthorEmail string) (string, error)
 	CreateVerifiedCommitFromLocalFunc func(owner, repo, branchName, message, directory string, coAuthorName, coAuthorEmail string) (string, error)
+	SyncWithRemoteFunc                func(directory, branch string) error
 }
 
 // CloneRepository is the mock implementation of GitHubService's CloneRepository method
@@ -213,4 +214,12 @@ func (m *MockGitHubService) CreateVerifiedCommitFromLocal(owner, repo, branchNam
 		return m.CreateVerifiedCommitFromLocalFunc(owner, repo, branchName, message, directory, coAuthorName, coAuthorEmail)
 	}
 	return "mock-verified-commit-sha", nil
+}
+
+// SyncWithRemote is the mock implementation of GitHubService's SyncWithRemote method
+func (m *MockGitHubService) SyncWithRemote(directory, branch string) error {
+	if m.SyncWithRemoteFunc != nil {
+		return m.SyncWithRemoteFunc(directory, branch)
+	}
+	return nil
 }
