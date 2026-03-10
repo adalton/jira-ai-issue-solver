@@ -3,6 +3,7 @@ package executortest
 
 import (
 	"context"
+	"time"
 
 	"jira-ai-issue-solver/executor"
 	"jira-ai-issue-solver/jobmanager"
@@ -40,6 +41,9 @@ type StubGitService struct {
 	CommitChangesFunc  func(owner, repo, branch, message, dir string, coAuthor *models.Author) (string, error)
 	SyncWithRemoteFunc func(dir, branch string) error
 	CreatePRFunc       func(params models.PRParams) (*models.PR, error)
+	GetPRForBranchFunc func(owner, repo, head string) (*models.PRDetails, error)
+	GetPRCommentsFunc  func(owner, repo string, number int, since time.Time) ([]models.PRComment, error)
+	ReplyToCommentFunc func(owner, repo string, prNumber int, commentID int64, body string) error
 }
 
 func (s *StubGitService) CreateBranch(dir, name string) error {
@@ -82,6 +86,27 @@ func (s *StubGitService) CreatePR(params models.PRParams) (*models.PR, error) {
 		return s.CreatePRFunc(params)
 	}
 	return &models.PR{}, nil
+}
+
+func (s *StubGitService) GetPRForBranch(owner, repo, head string) (*models.PRDetails, error) {
+	if s.GetPRForBranchFunc != nil {
+		return s.GetPRForBranchFunc(owner, repo, head)
+	}
+	return &models.PRDetails{}, nil
+}
+
+func (s *StubGitService) GetPRComments(owner, repo string, number int, since time.Time) ([]models.PRComment, error) {
+	if s.GetPRCommentsFunc != nil {
+		return s.GetPRCommentsFunc(owner, repo, number, since)
+	}
+	return []models.PRComment{}, nil
+}
+
+func (s *StubGitService) ReplyToComment(owner, repo string, prNumber int, commentID int64, body string) error {
+	if s.ReplyToCommentFunc != nil {
+		return s.ReplyToCommentFunc(owner, repo, prNumber, commentID, body)
+	}
+	return nil
 }
 
 // StubProjectResolver is a test double for [executor.ProjectResolver].

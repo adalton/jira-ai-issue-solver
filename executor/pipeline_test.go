@@ -130,15 +130,28 @@ func TestNewPipeline_ValidConfig(t *testing.T) {
 
 // --- Execute dispatch ---
 
-func TestExecute_FeedbackReturnsUnimplemented(t *testing.T) {
+func TestExecute_FeedbackDispatch(t *testing.T) {
 	d := newTestDeps(t)
-	p := d.pipeline(t)
+	d.git.GetPRForBranchFunc = func(owner, repo, head string) (*models.PRDetails, error) {
+		return &models.PRDetails{
+			Number: 42, Title: "Fix a bug",
+			Branch: head, URL: "https://github.com/org/repo/pull/42",
+		}, nil
+	}
+	d.git.GetPRCommentsFunc = func(owner, repo string, number int, since time.Time) ([]models.PRComment, error) {
+		return []models.PRComment{
+			{ID: 1, Author: models.Author{Username: "reviewer"}, Body: "Fix this"},
+		}, nil
+	}
 
+	p := d.pipeline(t)
 	_, err := p.Execute(context.Background(), &jobmanager.Job{
 		ID: "j1", TicketKey: "PROJ-1", Type: jobmanager.JobTypeFeedback,
+		AttemptNum: 1,
 	})
-	if err == nil || !strings.Contains(err.Error(), "not yet implemented") {
-		t.Fatalf("expected unimplemented error, got %v", err)
+	// Should not return "not yet implemented".
+	if err != nil && strings.Contains(err.Error(), "not yet implemented") {
+		t.Fatalf("feedback pipeline should be implemented, got %v", err)
 	}
 }
 
@@ -269,11 +282,12 @@ func TestExecuteNewTicket_NoChanges(t *testing.T) {
 
 // --- AI timeout ---
 
-func TestExecuteNewTicket_AITimeout(t *testing.T) {
+func TestExecuteNewTicket_SessionTimeout(t *testing.T) {
 	d := newTestDeps(t)
 
 	d.containers.ExecFunc = func(ctx context.Context, ctr *container.Container, cmd []string) (string, int, error) {
-		return "", 0, context.DeadlineExceeded
+		<-ctx.Done() // wait for session timeout
+		return "", 0, ctx.Err()
 	}
 
 	var reverted bool
@@ -295,9 +309,28 @@ func TestExecuteNewTicket_AITimeout(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on timeout")
 	}
-
+	if !strings.Contains(err.Error(), "session timeout exceeded") {
+		t.Errorf("expected session timeout error, got %v", err)
+	}
 	if !reverted {
 		t.Error("expected status to be reverted to todo")
+	}
+}
+
+func TestExecuteNewTicket_ParentContextCancelled(t *testing.T) {
+	d := newTestDeps(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	d.containers.ExecFunc = func(execCtx context.Context, ctr *container.Container, cmd []string) (string, int, error) {
+		cancel() // simulate shutdown
+		return "", 0, context.Canceled
+	}
+
+	p := d.pipeline(t)
+	_, err := p.Execute(ctx, newTicketJob("PROJ-1"))
+
+	if err == nil || !strings.Contains(err.Error(), "job cancelled") {
+		t.Fatalf("expected job cancelled error, got %v", err)
 	}
 }
 

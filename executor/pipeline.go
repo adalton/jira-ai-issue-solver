@@ -19,9 +19,9 @@ import (
 // Compile-time check that Pipeline implements Executor.
 var _ Executor = (*Pipeline)(nil)
 
-// Pipeline implements the new-ticket execution pipeline. It
-// coordinates workspace preparation, container lifecycle, AI
-// execution, committing, and PR creation.
+// Pipeline implements the job execution pipelines for new tickets
+// and PR feedback. It coordinates workspace preparation, container
+// lifecycle, AI execution, committing, and PR management.
 type Pipeline struct {
 	tracker    tracker.IssueTracker
 	git        GitService
@@ -94,7 +94,7 @@ func (p *Pipeline) Execute(ctx context.Context, job *jobmanager.Job) (jobmanager
 	case jobmanager.JobTypeNewTicket:
 		return p.executeNewTicket(ctx, job)
 	case jobmanager.JobTypeFeedback:
-		return jobmanager.JobResult{}, fmt.Errorf("feedback pipeline not yet implemented")
+		return p.executeFeedback(ctx, job)
 	default:
 		return jobmanager.JobResult{}, fmt.Errorf("unknown job type: %s", job.Type)
 	}
@@ -214,6 +214,9 @@ func (p *Pipeline) executeNewTicket(ctx context.Context, job *jobmanager.Job) (r
 
 	// Exec runtime error (not just non-zero exit) is fatal.
 	if execErr != nil {
+		if execCtx.Err() != nil {
+			return result, fmt.Errorf("session timeout exceeded: %w", execErr)
+		}
 		return result, fmt.Errorf("AI session failed: %w", execErr)
 	}
 

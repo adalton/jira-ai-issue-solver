@@ -42,6 +42,25 @@
 //  15. Update ticket with PR URL and transition status
 //  16. Stop container (workspace retained for future jobs)
 //
+// # Pipeline steps (PR feedback)
+//
+//  1. Fetch work item and resolve project settings
+//  2. Find open PR by branch name
+//  3. Find or recreate workspace (self-healing if cleaned up)
+//  4. Switch to PR branch and sync with remote
+//  5. Fetch and categorize PR comments (new vs addressed)
+//  6. Write feedback task file for the AI agent
+//  7. Resolve container, execute AI, check for changes
+//  8. Commit changes via GitHub API
+//  9. Sync workspace with remote
+//  10. Reply to addressed PR comments
+//  11. Stop container (workspace retained)
+//
+// Key differences from the new-ticket pipeline: the feedback pipeline
+// does not transition ticket status, does not create branches or PRs,
+// reuses the existing workspace and PR branch, and replies to review
+// comments after committing.
+//
 // Test doubles are provided in the [executortest] subpackage.
 package executor
 
@@ -60,19 +79,19 @@ type Executor interface {
 }
 
 // GitService defines the git and GitHub API operations needed by the
-// new-ticket execution pipeline. This is a consumer-defined interface
-// containing only the methods this pipeline requires.
+// execution pipelines. This is a consumer-defined interface containing
+// the methods required by both the new-ticket and feedback pipelines.
 //
-// The feedback pipeline (Task 8) and other consumers define their own
-// interface slices. The underlying implementation (e.g.,
-// services.GitHubServiceImpl) satisfies all of them.
+// The underlying implementation (e.g., services.GitHubServiceImpl)
+// satisfies this interface.
 type GitService interface {
 	// CreateBranch creates a new git branch in the workspace and
 	// switches to it.
 	CreateBranch(dir, name string) error
 
 	// SwitchBranch switches to an existing branch. Used when a
-	// workspace is reused on retry.
+	// workspace is reused on retry or when checking out a PR branch
+	// for feedback processing.
 	SwitchBranch(dir, name string) error
 
 	// HasChanges reports whether the workspace has uncommitted
@@ -91,6 +110,20 @@ type GitService interface {
 
 	// CreatePR creates a pull request.
 	CreatePR(params models.PRParams) (*models.PR, error)
+
+	// GetPRForBranch finds the open pull request whose head branch
+	// matches the given branch name. Returns an error if no matching
+	// PR exists.
+	GetPRForBranch(owner, repo, head string) (*models.PRDetails, error)
+
+	// GetPRComments returns comments on the given pull request.
+	// If since is the zero time, all comments are returned.
+	GetPRComments(owner, repo string, number int,
+		since time.Time) ([]models.PRComment, error)
+
+	// ReplyToComment posts a reply to a specific PR comment.
+	ReplyToComment(owner, repo string, prNumber int,
+		commentID int64, body string) error
 }
 
 // ProjectResolver maps work items to their project-specific settings.
