@@ -1270,6 +1270,95 @@ func TestConfig_validateWorkspacesConfiguration(t *testing.T) {
 	}
 }
 
+func TestConfig_validateContainerConfiguration(t *testing.T) {
+	tests := []struct {
+		name          string
+		runtime       string
+		expectedError string
+	}{
+		{
+			name:          "valid runtime auto",
+			runtime:       "auto",
+			expectedError: "",
+		},
+		{
+			name:          "valid runtime podman",
+			runtime:       "podman",
+			expectedError: "",
+		},
+		{
+			name:          "valid runtime docker",
+			runtime:       "docker",
+			expectedError: "",
+		},
+		{
+			name:          "empty runtime is valid (treated as auto)",
+			runtime:       "",
+			expectedError: "",
+		},
+		{
+			name:          "invalid runtime",
+			runtime:       "containerd",
+			expectedError: `container.runtime must be "auto", "podman", or "docker"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			keyPath := createTempKeyFile(t)
+			defer func() { _ = os.Remove(keyPath) }()
+
+			config := &Config{}
+			config.AIProvider = "claude"
+			config.Logging.Level = "info"
+			config.Logging.Format = "console"
+			config.Jira.BaseURL = "https://test.atlassian.net"
+			config.Jira.Username = "test@example.com"
+			config.Jira.APIToken = "test-token"
+			config.Jira.AssigneeToGitHubUsername = map[string]string{
+				"test@example.com": "test-user",
+			}
+			config.Jira.Projects = []ProjectConfig{
+				{
+					ProjectKeys: ProjectKeys{"TEST"},
+					StatusTransitions: TicketTypeStatusTransitions{
+						"Bug": StatusTransitions{
+							Todo:       "To Do",
+							InProgress: "In Progress",
+							InReview:   "In Review",
+						},
+					},
+					ComponentToRepo: ComponentToRepoMap{
+						"component1": "https://github.com/test/repo1.git",
+					},
+				},
+			}
+			config.GitHub.AppID = 123456
+			config.GitHub.PrivateKeyPath = keyPath
+			config.GitHub.BotUsername = "test-bot"
+			config.AI.MaxRetries = 5
+			config.AI.RetryDelaySeconds = 2
+			config.Workspaces.BaseDir = "/var/lib/workspaces"
+			config.Workspaces.TTLDays = 7
+			config.Container.Runtime = tt.runtime
+
+			err := config.validate()
+
+			if tt.expectedError == "" {
+				if err != nil {
+					t.Errorf("expected no error, got: %v", err)
+				}
+			} else {
+				if err == nil {
+					t.Errorf("expected error containing %q, got nil", tt.expectedError)
+				} else if !contains(err.Error(), tt.expectedError) {
+					t.Errorf("expected error containing %q, got: %v", tt.expectedError, err)
+				}
+			}
+		})
+	}
+}
+
 // contains checks if a string contains a substring
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||

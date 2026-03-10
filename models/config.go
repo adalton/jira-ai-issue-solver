@@ -350,6 +350,36 @@ type Config struct {
 
 	// Workspaces configuration for ticket-scoped workspace lifecycle
 	Workspaces WorkspacesConfig `yaml:"workspaces" mapstructure:"workspaces"`
+
+	// Container configuration for dev container management
+	Container ContainerCfg `yaml:"container" mapstructure:"container"`
+}
+
+// ContainerCfg holds bot-level container configuration. These values
+// serve as defaults when no repo-level container config is found.
+type ContainerCfg struct {
+	// Runtime specifies the container runtime preference. Valid values
+	// are "auto" (detect, preferring podman), "podman", or "docker".
+	Runtime string `yaml:"runtime" mapstructure:"runtime" default:"auto"`
+
+	// DefaultImage is the fallback container image used when no
+	// repo-level container config (.ai-bot/container.json or
+	// .devcontainer/devcontainer.json) provides an image. If empty,
+	// a built-in minimal fallback image is used.
+	DefaultImage string `yaml:"default_image" mapstructure:"default_image"`
+
+	// ResourceLimits are the default resource limits applied to
+	// containers. Repo-level config can override these.
+	ResourceLimits ContainerResourceLimits `yaml:"resource_limits" mapstructure:"resource_limits"`
+}
+
+// ContainerResourceLimits holds default resource limits for containers.
+type ContainerResourceLimits struct {
+	// Memory limit in container runtime format (e.g., "8g", "512m").
+	Memory string `yaml:"memory" mapstructure:"memory"`
+
+	// CPUs limit in container runtime format (e.g., "4", "0.5").
+	CPUs string `yaml:"cpus" mapstructure:"cpus"`
 }
 
 // WorkspacesConfig holds configuration for ticket-scoped workspace management.
@@ -500,6 +530,12 @@ func LoadConfig(configPath string) (*Config, error) {
 	// Workspaces configuration
 	bindEnv("workspaces.base_dir")
 	bindEnv("workspaces.ttl_days")
+
+	// Container configuration
+	bindEnv("container.runtime")
+	bindEnv("container.default_image")
+	bindEnv("container.resource_limits.memory")
+	bindEnv("container.resource_limits.cpus")
 
 	// Other configuration
 	bindEnv("temp_dir")
@@ -715,6 +751,9 @@ func setDefaults(v *viper.Viper) {
 	// Workspace defaults
 	v.SetDefault("workspaces.ttl_days", 7)
 
+	// Container defaults
+	v.SetDefault("container.runtime", "auto")
+
 	// Temp directory defaults
 	v.SetDefault("temp_dir", "/tmp/jira-ai-issue-solver")
 }
@@ -851,5 +890,22 @@ func (c *Config) validate() error {
 		return errors.New("workspaces.ttl_days must be positive")
 	}
 
+	if err := c.Container.validate(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validate checks container configuration values.
+func (cc *ContainerCfg) validate() error {
+	// Empty runtime is treated as "auto" (the default).
+	// Valid values must match container.RuntimeAuto/RuntimePodman/RuntimeDocker constants.
+	if cc.Runtime != "" {
+		validRuntimes := map[string]bool{"auto": true, "podman": true, "docker": true}
+		if !validRuntimes[cc.Runtime] {
+			return fmt.Errorf("container.runtime must be \"auto\", \"podman\", or \"docker\", got %q", cc.Runtime)
+		}
+	}
 	return nil
 }

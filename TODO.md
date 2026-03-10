@@ -146,7 +146,7 @@ workspace manager, and the workspace manager needs it to function.
 
 ---
 
-### Task 3: ContainerManager -- config resolution and runtime detection
+### Task 3: ContainerManager -- config resolution and runtime detection ✅
 
 Introduce the container management abstraction. This task covers config
 resolution (how the bot discovers what container to use) and runtime
@@ -244,6 +244,17 @@ from Task 3.
 - Document orphan cleanup (naming convention, when it runs)
 
 **Dependencies**: Task 3
+
+**Implementation notes**
+
+- Task 3 intentionally deferred the `ContainerRuntime` execution
+  interface (YAGNI). Task 3 implements runtime *detection*
+  (`DetectRuntime` finds podman/docker on PATH) but does not define
+  an interface for running containers. This task should define the
+  `ContainerRuntime` interface with the methods needed for lifecycle
+  operations (run, exec, stop, list) and implement it for podman/docker.
+  The `Resolver` from Task 3 is a standalone component; compose it
+  into the concrete `Manager` implementation built here.
 
 ---
 
