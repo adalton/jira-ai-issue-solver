@@ -346,7 +346,7 @@ from the shared domain model).
 
 ---
 
-### Task 6: JobManager
+### Task 6: JobManager ✅
 
 Introduce the central coordination layer. The JobManager receives events,
 creates jobs, enforces constraints, and tracks state. This is the
@@ -399,7 +399,57 @@ orchestration brain of the new architecture.
 - Document retry policy (count, backoff strategy)
 - Document deduplication semantics
 
-**Dependencies**: Task 2 (WorkspaceManager)
+**Dependencies**: None (workspace integration moved to Task 7)
+
+**Implementation notes**
+
+- Package structure: `jobmanager/` for the Manager interface and
+  Coordinator implementation. `jobmanager/jobmanagertest/stubs.go`
+  for test doubles. Follows the established `*test` package convention.
+- **Retry semantics**: The JobManager does NOT retry jobs internally
+  and does NOT implement exponential backoff. Scanners drive retries:
+  when a job fails, the ticket status reverts to "todo", the scanner
+  re-discovers it on the next poll cycle, and calls Submit again. The
+  JobManager tracks per-ticket failure counts across submissions and
+  rejects once `max_retries` is exhausted. Success resets the counter.
+  The "backoff" is implicit — it happens at the scanner's poll
+  interval. This avoids duplicating the scanner's work and keeps the
+  JobManager stateless with respect to scheduling.
+- **No workspace integration**: The original spec had the JobManager
+  delegating to WorkspaceManager for create/find/cleanup. In practice,
+  workspace operations are the JobExecutor's concern (Task 7), not
+  the JobManager's. The JobManager coordinates job lifecycle; it
+  doesn't need to know where repos are on disk. This removes the
+  Task 2 dependency.
+- **Event is minimal**: `Event` carries only `TicketKey` and `Type`
+  (new ticket vs feedback). The executor fetches work item details,
+  PR details, and repo URLs from the tracker/git service when it
+  runs. Scanners emit lightweight events; they don't pre-fetch and
+  bundle payloads. This keeps the JobManager decoupled from domain
+  models and avoids stale data (the executor always gets fresh state).
+- **ExecuteFunc injection**: The Coordinator accepts an `ExecuteFunc`
+  at construction — this is how the JobExecutor (Task 7) plugs in.
+  The Coordinator calls it in a new goroutine when a slot is
+  available and transitions the job to Completed/Failed based on
+  the return value. Task 11 (wiring) composes them.
+- **Concurrency model**: `Submit` enqueues a job and calls an
+  internal `tryDispatch` function synchronously (while holding the
+  lock). `tryDispatch` checks for pending jobs and available slots,
+  transitions jobs to Running, and launches goroutines. The same
+  `tryDispatch` is called from `Complete`/`Fail` to drain the queue
+  as slots free up. No background dispatch goroutine is needed.
+- **Circuit breaker**: Simple open/closed (no half-open). Tracks
+  consecutive failure timestamps within a configurable window. Any
+  success resets the failure history. Auto-resets after the cooldown
+  period. Threshold of 0 disables the breaker entirely.
+- **Thread safety**: All mutable state is guarded by a single mutex.
+  Public methods return deep-copy snapshots of Jobs to prevent data
+  races on reads outside the lock. The ExecuteFunc receives a
+  snapshot, not a reference to internal state. Race detector passes
+  cleanly.
+- **Job.AttemptNum**: Set to `failureCount + 1` at submission time.
+  Gives the executor visibility into how many prior attempts have
+  failed for this ticket (e.g., for logging "attempt 3 of 3").
 
 ---
 
