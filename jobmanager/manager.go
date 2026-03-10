@@ -58,9 +58,26 @@ type Event struct {
 	TicketKey string
 }
 
-// JobResult holds the outcome of a successfully completed job.
-// Fields will be populated by later tasks (PR details, cost, etc.).
-type JobResult struct{}
+// JobResult holds the outcome of a completed job.
+type JobResult struct {
+	// PRURL is the URL of the created pull request.
+	PRURL string
+
+	// PRNumber is the number of the created pull request.
+	PRNumber int
+
+	// Draft indicates whether the PR was created as a draft
+	// (e.g., due to validation failures).
+	Draft bool
+
+	// CostUSD is the AI session cost reported by the provider.
+	CostUSD float64
+
+	// ValidationPassed indicates whether the AI's own validation
+	// succeeded. False when the AI reported failures or exited
+	// with a non-zero code.
+	ValidationPassed bool
+}
 
 // Job represents a unit of work tracked by the Manager. Jobs progress
 // through the states: Pending -> Running -> Completed | Failed.

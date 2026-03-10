@@ -642,6 +642,32 @@ On SIGTERM/SIGINT:
 5. **Persist cost data**: Write the current daily cost accumulator to disk.
 6. **Exit**: Clean exit.
 
+## Design Decisions
+
+### Consumer-defined interfaces over shared interface packages
+
+The architecture document originally defined a single `GitService` interface
+containing all git and GitHub API operations. During implementation, we chose
+**consumer-defined interfaces** instead: each package declares only the
+methods it requires.
+
+**Rationale**: No single consumer needs the full `GitService` surface area.
+The executor's new-ticket pipeline needs `CreateBranch`, `HasChanges`,
+`CommitChanges`, `SyncWithRemote`, and `CreatePR`. The feedback pipeline
+(Task 8) will add `ReplyToComment` and `PostPRComment`. The scanners
+(Task 9) need `GetPRDetails` and `GetPRComments`. The workspace manager
+already defines its own `Cloner` interface with just `CloneRepository`.
+
+By defining narrow interfaces at the consumer, each package is decoupled
+from operations it doesn't use. The underlying implementation (e.g.,
+`services.GitHubServiceImpl`) satisfies all consumers without any of them
+needing to know the full set of methods. This follows standard Go
+conventions and eliminates the need for a shared `gitservice/` package.
+
+**Applies to**: `executor.GitService`, `workspace.Cloner`, and future
+consumer-specific interface slices in the feedback pipeline, scanners,
+and crash recovery packages.
+
 ## Technology Decisions
 
 | Decision | Choice | Rationale |

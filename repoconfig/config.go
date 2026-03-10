@@ -105,6 +105,12 @@ func Load(dir string) (*Config, error) {
 	return &cfg, nil
 }
 
+// Default returns a Config with non-nil empty slices and zero-value
+// settings. Used when the config file is absent or cannot be loaded.
+func Default() *Config {
+	return defaultConfig()
+}
+
 // defaultConfig returns a Config with non-nil empty slices.
 func defaultConfig() *Config {
 	return &Config{
