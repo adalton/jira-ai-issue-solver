@@ -94,17 +94,45 @@ jira:
       #     ref: main                          # branch/tag/commit (optional)
       #     install: .ai-workflows/install.sh  # shell command to run inside container after cloning (optional)
 
-      # Per-project instructions for the AI agent (optional). Injected
-      # into the task file as "Project Instructions". Useful for
-      # prototyping workflow guidance before committing
-      # .ai-bot/instructions.md to the target repo. Repo-level file
-      # takes precedence when present.
+      # Universal instructions for the AI agent (optional). Appended to
+      # ALL task types (new tickets AND feedback). Use for validation
+      # commands and coding standards that apply regardless of task type.
+      # Repo-level .ai-bot/instructions.md takes precedence when present.
       # instructions: |
-      #   Follow the bugfix workflow at .ai-workflows/bugfix/skills/controller.md.
-      #   After making changes, run:
+      #   After making changes, validate with:
       #   - `make build`
       #   - `make test`
       #   - `make lint`
+
+      # Workflow for new tickets only (optional). Appended ONLY to new-
+      # ticket task files — feedback tasks do not receive this. Use for
+      # multi-phase workflows (assess → diagnose → fix → test → review).
+      # Repo-level .ai-bot/new-ticket-workflow.md takes precedence.
+      # new_ticket_workflow: |
+      #   Execute the following bugfix workflow phases in order.
+      #   Each phase is defined in the corresponding skill file.
+      #
+      #   1. Read and execute .ai-workflows/bugfix/skills/assess.md
+      #      The bug report is in .ai-bot/task.md. Do not ask clarifying
+      #      questions — make reasonable assumptions where needed.
+      #
+      #   2. Read and execute .ai-workflows/bugfix/skills/diagnose.md
+      #      Include your root cause analysis in .ai-bot/pr.md.
+      #
+      #   3. Read and execute .ai-workflows/bugfix/skills/fix.md
+      #      Implement the minimal fix. Do not run tests yet.
+      #
+      #   4. Read and execute .ai-workflows/bugfix/skills/test.md
+      #      Write regression tests and run the full suite. If tests fail,
+      #      revise your fix and retest (up to 5 iterations).
+      #
+      #   5. Read and execute .ai-workflows/bugfix/skills/review.md
+      #      Self-review your changes. If issues are found, correct them,
+      #      retest, and re-review (up to 4 iterations).
+      #
+      #   6. Write a PR title and description to .ai-bot/pr.md.
+      #      First line is the title. Remaining lines are the body.
+      #      Include a Root Cause section summarizing your diagnosis.
 
     # Example project 2 - using PR URLs in comments instead of git field
     - project_keys:

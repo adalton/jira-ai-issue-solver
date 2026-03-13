@@ -11,10 +11,13 @@ The bot checks for the following repo-level files:
 
 | File | Purpose |
 |------|---------|
-| `.ai-bot/config.yaml` | Bot-specific settings: PR preferences, validation commands, AI provider config, repo imports |
-| `.ai-bot/instructions.md` | AI guidance: workflow references, validation commands, coding standards (injected into the task prompt) |
-| `.ai-bot/container.json` | Bot-specific container settings: image, env, resource limits |
-| `.devcontainer/devcontainer.json` | Standard devcontainer config (practical subset supported) |
+| File | Purpose | Applies to |
+|------|---------|------------|
+| `.ai-bot/instructions.md` | Universal AI guidance: validation commands, coding standards | All task types |
+| `.ai-bot/new-ticket-workflow.md` | Multi-phase workflow for new tickets (assess → fix → test → review) | New tickets only |
+| `.ai-bot/config.yaml` | Bot settings: PR preferences, validation commands, AI provider config, repo imports | Bot behavior |
+| `.ai-bot/container.json` | Container settings: image, env, resource limits | Container setup |
+| `.devcontainer/devcontainer.json` | Standard devcontainer config (practical subset supported) | Container setup |
 
 The AI agent may also write files to `.ai-bot/` at runtime:
 
@@ -151,33 +154,63 @@ Environment variables merge additively: repo-level keys override bot-level
 keys with the same name, but bot-level keys not present in the repo config
 are preserved.
 
-## AI Instructions (`.ai-bot/instructions.md`)
+## Design: Two Task Types, Two Instruction Channels
 
-This is the primary mechanism for giving the AI agent project-specific
-guidance. The file contents are appended to the task prompt as a
-"Project Instructions" section, so the AI sees them regardless of which
-provider is in use (Claude, Gemini, etc.).
+The bot handles two fundamentally different scenarios, and the AI needs
+different guidance for each:
+
+**New tickets** require the AI to understand a problem, design a
+solution, implement it, and validate it. This is a complex, multi-phase
+task that benefits from structured workflow guidance (assess the bug,
+diagnose the root cause, implement the fix, run tests, self-review).
+
+**PR feedback** requires the AI to read specific reviewer comments, make
+targeted changes, and verify nothing broke. The scope is narrow and
+well-defined — the AI doesn't need to re-assess or re-diagnose anything.
+
+This is why the bot provides two separate instruction channels:
+
+| Channel | File | Section heading | Applies to |
+|---------|------|-----------------|------------|
+| **Universal instructions** | `.ai-bot/instructions.md` | `## Project Instructions` | All task types |
+| **New-ticket workflow** | `.ai-bot/new-ticket-workflow.md` | `## Workflow` | New tickets only |
+
+Both are provider-agnostic (unlike `CLAUDE.md` or `GEMINI.md`) — they
+reach every AI provider through the task prompt.
+
+### What goes where
+
+**Universal instructions** (`instructions.md`): Anything the AI should
+do regardless of whether it's implementing a new ticket or addressing
+review feedback. Validation commands, coding standards, project-specific
+rules.
+
+**Workflow** (`new-ticket-workflow.md`): Multi-phase orchestration for
+new tickets. References to skill files, phase ordering, iteration caps.
+This content would confuse the AI during feedback handling ("why am I
+being told to assess and diagnose a bug when I just need to change a
+variable name?"), which is why it's separate.
+
+## Universal Instructions (`.ai-bot/instructions.md`)
+
+This file is appended to **every** task file the bot generates — both
+new tickets and PR feedback. Use it for guidance that applies universally.
 
 ```markdown
-## Workflow
-Follow the bugfix workflow at .ai-workflows/bugfix/skills/controller.md.
-
-## Validation
-After making changes, run these commands to verify correctness:
+After making changes, validate with:
 - `make build`
 - `make test`
 - `make lint`
 
-## Coding Standards
-- Follow the existing code style in the repository.
-- Add unit tests for all new functions.
-- Do not modify generated files.
+Follow the existing code style in the repository.
+Add unit tests for all new functions.
+Do not modify generated files.
 ```
 
 **Key characteristics:**
 
-- **Provider-agnostic**: Unlike `CLAUDE.md` or `GEMINI.md`, this file
-  reaches every AI provider through the task prompt.
+- **Provider-agnostic**: Reaches every AI provider through the task
+  prompt, unlike provider-specific config files.
 - **Read automatically**: The bot reads this file before writing the task
   file. No configuration needed — just create the file.
 - **Optional**: If the file is absent or empty, nothing is appended. The
@@ -186,6 +219,70 @@ After making changes, run these commands to verify correctness:
 - **Composable with imports**: Use `imports` in `.ai-bot/config.yaml` to
   clone a shared workflow repo, then reference the imported files from
   `instructions.md`.
+- **Prototyping**: Admins can set `instructions` in the bot's project
+  config to prototype content before committing the file to the repo.
+  The repo-level file takes precedence when present.
+
+## New-Ticket Workflow (`.ai-bot/new-ticket-workflow.md`)
+
+This file is appended **only** to new-ticket task files. Feedback tasks
+never see it. Use it for multi-phase workflows that guide the AI through
+a structured problem-solving process.
+
+```markdown
+Execute the following bugfix workflow phases in order.
+Each phase is defined in the corresponding skill file.
+
+1. Read and execute .ai-workflows/bugfix/skills/assess.md
+   The bug report is in .ai-bot/task.md. Do not ask clarifying
+   questions — make reasonable assumptions where needed.
+
+2. Read and execute .ai-workflows/bugfix/skills/diagnose.md
+   Include your root cause analysis in .ai-bot/pr.md.
+
+3. Read and execute .ai-workflows/bugfix/skills/fix.md
+   Implement the minimal fix. Do not run tests yet.
+
+4. Read and execute .ai-workflows/bugfix/skills/test.md
+   Write regression tests and run the full suite. If tests fail,
+   revise your fix and retest (up to 5 iterations).
+
+5. Read and execute .ai-workflows/bugfix/skills/review.md
+   Self-review your changes. If issues are found, correct them,
+   retest, and re-review (up to 4 iterations).
+
+6. Write a PR title and description to .ai-bot/pr.md.
+   First line is the title. Remaining lines are the body.
+   Include a Root Cause section summarizing your diagnosis.
+```
+
+**Key characteristics:**
+
+- **New tickets only**: The bot does not append this to feedback task
+  files. Feedback handling uses the standard instructions ("address each
+  review comment") plus universal project instructions.
+- **References skill files directly**: Point to specific files in the
+  workspace rather than referencing a controller. The AI follows explicit
+  instructions, not an interactive workflow.
+- **Iteration caps**: Always cap loops (test retries, review iterations)
+  to prevent the AI from burning tokens in circles.
+- **Prototyping**: Admins can set `new_ticket_workflow` in the bot's
+  project config to iterate on workflow content before committing the
+  file. The repo-level file takes precedence when present.
+
+### Why not put workflows in `instructions.md`?
+
+If `instructions.md` contains "execute the bugfix workflow phases:
+assess, diagnose, fix, test, review," those instructions are also
+appended to feedback task files. The AI receives a feedback task
+("address this review comment about variable naming") alongside
+instructions to "assess the bug and diagnose the root cause." This
+creates conflicting signals. The AI may try to run the full workflow
+when it should make a targeted change, or it may ignore the workflow
+entirely. Neither outcome is reliable.
+
+Separating the channels eliminates the conflict: universal guidance
+applies everywhere, workflow guidance applies only where it makes sense.
 
 ## Bot Configuration (`.ai-bot/config.yaml`)
 
@@ -273,13 +370,13 @@ config, etc.).
 | You have a pre-built dev image with your toolchain | `.ai-bot/container.json` |
 | You already have a devcontainer config with an `image` field | `.devcontainer/devcontainer.json` (no extra file needed) |
 | You want to customize PR labels or titles | `.ai-bot/config.yaml` |
-| You want to tell the AI about your build/test commands | `.ai-bot/instructions.md` |
+| You want to tell the AI about your build/test commands | `.ai-bot/instructions.md` (applies to all tasks) |
 | You want to restrict which tools the AI can use | `.ai-bot/config.yaml` |
 | Your devcontainer uses a Dockerfile (no `image` field) | `.ai-bot/container.json` (with a pre-built image) |
-| You want the AI to follow a multi-step workflow | `.ai-bot/instructions.md` + `imports` in `.ai-bot/config.yaml` |
+| You want the AI to follow a multi-phase workflow for new tickets | `.ai-bot/new-ticket-workflow.md` + `imports` in `.ai-bot/config.yaml` |
 | You want shared AI skills/guidelines from another repo | `imports` in `.ai-bot/config.yaml` |
-| You want provider-agnostic AI guidance | `.ai-bot/instructions.md` |
-| You want the AI to generate PR titles/descriptions | Instruct the AI to write `.ai-bot/pr.md` via `instructions.md` |
+| You want provider-agnostic coding standards | `.ai-bot/instructions.md` |
+| You want the AI to generate PR titles/descriptions | Reference `.ai-bot/pr.md` in `new-ticket-workflow.md` |
 
 ## Complete Example
 
@@ -288,11 +385,12 @@ A repository with all configuration files and a shared workflow import:
 ```text
 your-repo/
 ├── .ai-bot/
-│   ├── config.yaml          # Bot + AI settings + imports
-│   ├── instructions.md      # AI guidance (injected into task prompt)
-│   └── container.json       # Container settings (takes priority over devcontainer)
+│   ├── config.yaml               # Bot + AI settings + imports
+│   ├── instructions.md           # Universal AI guidance (all task types)
+│   ├── new-ticket-workflow.md    # Multi-phase workflow (new tickets only)
+│   └── container.json            # Container settings (takes priority over devcontainer)
 ├── .devcontainer/
-│   └── devcontainer.json    # Standard devcontainer (used if no .ai-bot/container.json)
+│   └── devcontainer.json         # Standard devcontainer (used if no .ai-bot/container.json)
 └── ...
 ```
 
@@ -315,18 +413,78 @@ pr:
     - ai-generated
 ```
 
-And `.ai-bot/instructions.md`:
+And `.ai-bot/instructions.md` (universal — applies to new tickets AND feedback):
 
 ```markdown
-## Workflow
-Follow the bugfix workflow at .ai-workflows/bugfix/skills/controller.md.
+After making changes, validate with:
+- `make build`
+- `make test`
+- `make lint`
 
-## Validation
-After making changes, run `make build`, `make test`, and `make lint`.
-Fix all errors before finishing.
+Follow the existing code style in the repository.
+Add unit tests for all new functions.
 ```
 
-In practice, most teams need only one or two of these files. If you already
-have a `.devcontainer/devcontainer.json` with an `image` field and don't
-need custom bot settings, no additional files are needed. Adding just an
-`instructions.md` is the quickest way to improve AI output quality.
+And `.ai-bot/new-ticket-workflow.md` (new tickets only — NOT applied to feedback):
+
+```markdown
+Execute the following bugfix workflow phases in order.
+Each phase is defined in the corresponding skill file.
+
+1. Read and execute .ai-workflows/bugfix/skills/assess.md
+   The bug report is in .ai-bot/task.md. Do not ask clarifying
+   questions — make reasonable assumptions where needed.
+
+2. Read and execute .ai-workflows/bugfix/skills/diagnose.md
+   Include your root cause analysis in .ai-bot/pr.md.
+
+3. Read and execute .ai-workflows/bugfix/skills/fix.md
+   Implement the minimal fix. Do not run tests yet.
+
+4. Read and execute .ai-workflows/bugfix/skills/test.md
+   Write regression tests and run the full suite. If tests fail,
+   revise your fix and retest (up to 5 iterations).
+
+5. Read and execute .ai-workflows/bugfix/skills/review.md
+   Self-review your changes. If issues are found, correct them,
+   retest, and re-review (up to 4 iterations).
+
+6. Write a PR title and description to .ai-bot/pr.md.
+   First line is the title. Remaining lines are the body.
+   Include a Root Cause section summarizing your diagnosis.
+```
+
+### What the AI sees
+
+For a **new ticket**, the task file contains:
+
+1. **Task context** — ticket key, summary, description
+2. **Standard instructions** — "Implement this task, validate your changes, don't push to git"
+3. **Project Instructions** — from `instructions.md` (validation commands, coding standards)
+4. **Workflow** — from `new-ticket-workflow.md` (multi-phase bugfix workflow)
+
+For **PR feedback**, the task file contains:
+
+1. **PR context** — PR number, title, branch
+2. **Review comments** — grouped by file, with author attribution and line numbers
+3. **Standard instructions** — "Address each review comment, validate your changes, don't push to git"
+4. **Project Instructions** — from `instructions.md` (validation commands, coding standards)
+
+Notice: feedback tasks get the universal instructions (validation, coding
+standards) but **not** the workflow. The AI reads the review comments, makes
+targeted changes, runs the validation commands, and is done. No assess,
+diagnose, or multi-phase orchestration needed.
+
+### Starting simple
+
+In practice, most teams need only one or two of these files. A good
+progression:
+
+1. **No files** — the bot works with defaults. The AI gets basic
+   instructions ("implement this task, validate your changes").
+2. **Add `instructions.md`** — tell the AI your validation commands.
+   This is the single biggest improvement to output quality.
+3. **Add `new-ticket-workflow.md`** — guide the AI through a structured
+   problem-solving process for new tickets.
+4. **Add `config.yaml` with imports** — pull in shared workflow skills
+   from another repo so the workflow file can reference them.

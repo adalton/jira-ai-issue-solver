@@ -41,6 +41,14 @@ const (
 	// remaining lines as the PR body. This file is read by the bot
 	// after the AI session completes.
 	PRDescriptionPath = ".ai-bot/pr.md"
+
+	// NewTicketWorkflowPath is the path, relative to the workspace
+	// root, where optional workflow instructions for new tickets
+	// live. Unlike InstructionsPath (which applies to all task
+	// types), this file is only appended to new-ticket task files.
+	// Use this for multi-phase workflows (assess → diagnose → fix →
+	// test → review) that don't apply to PR feedback handling.
+	NewTicketWorkflowPath = ".ai-bot/new-ticket-workflow.md"
 )
 
 // Writer generates task files that the AI agent reads to understand
@@ -49,9 +57,10 @@ type Writer interface {
 	// WriteNewTicketTask generates a task file for implementing a new
 	// ticket. The file is written to <dir>/.ai-bot/task.md.
 	// fallbackInstructions is used when .ai-bot/instructions.md does
-	// not exist in the workspace (e.g., project-level instructions
-	// for prototyping).
-	WriteNewTicketTask(workItem models.WorkItem, dir, fallbackInstructions string) error
+	// not exist (universal guidance like validation commands).
+	// fallbackWorkflow is used when .ai-bot/new-ticket-workflow.md
+	// does not exist (multi-phase workflow for new tickets only).
+	WriteNewTicketTask(workItem models.WorkItem, dir, fallbackInstructions, fallbackWorkflow string) error
 
 	// WriteFeedbackTask generates a task file for addressing PR review
 	// feedback. newComments are comments requiring action;

@@ -74,6 +74,7 @@ func (r *ConfigResolver) ResolveProject(workItem models.WorkItem) (*models.Proje
 		Container:            pc.Container,
 		Imports:              imports,
 		Instructions:         pc.Instructions,
+		NewTicketWorkflow:    pc.NewTicketWorkflow,
 	}, nil
 }
 

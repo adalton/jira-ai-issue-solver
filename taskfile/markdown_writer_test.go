@@ -23,7 +23,7 @@ func TestWriteNewTicketTask_BasicTicket(t *testing.T) {
 		Type:        "Bug",
 	}
 
-	if err := writer.WriteNewTicketTask(workItem, dir, ""); err != nil {
+	if err := writer.WriteNewTicketTask(workItem, dir, "", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -47,7 +47,7 @@ func TestWriteNewTicketTask_EmptyDescription(t *testing.T) {
 		Summary: "Quick fix",
 	}
 
-	if err := writer.WriteNewTicketTask(workItem, dir, ""); err != nil {
+	if err := writer.WriteNewTicketTask(workItem, dir, "", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -70,7 +70,7 @@ func TestWriteNewTicketTask_SecurityLevel(t *testing.T) {
 		SecurityLevel: "Embargoed",
 	}
 
-	if err := writer.WriteNewTicketTask(workItem, dir, ""); err != nil {
+	if err := writer.WriteNewTicketTask(workItem, dir, "", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -94,7 +94,7 @@ func TestWriteNewTicketTask_NoSecurityNote_WhenNoSecurityLevel(t *testing.T) {
 		Description: "Add a button.",
 	}
 
-	if err := writer.WriteNewTicketTask(workItem, dir, ""); err != nil {
+	if err := writer.WriteNewTicketTask(workItem, dir, "", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -112,7 +112,7 @@ func TestWriteNewTicketTask_MultilineDescription(t *testing.T) {
 		Description: "Line one.\n\nLine three after blank.\nLine four.",
 	}
 
-	if err := writer.WriteNewTicketTask(workItem, dir, ""); err != nil {
+	if err := writer.WriteNewTicketTask(workItem, dir, "", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -139,7 +139,7 @@ func TestWriteNewTicketTask_CreatesDirectory(t *testing.T) {
 		t.Fatal(".ai-bot directory should not exist before write")
 	}
 
-	if err := writer.WriteNewTicketTask(workItem, dir, ""); err != nil {
+	if err := writer.WriteNewTicketTask(workItem, dir, "", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -158,13 +158,13 @@ func TestWriteNewTicketTask_OverwritesExistingFile(t *testing.T) {
 
 	// Write first task file.
 	first := models.WorkItem{Key: "PROJ-1", Summary: "First task"}
-	if err := writer.WriteNewTicketTask(first, dir, ""); err != nil {
+	if err := writer.WriteNewTicketTask(first, dir, "", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	// Write second task file to same location.
 	second := models.WorkItem{Key: "PROJ-2", Summary: "Second task"}
-	if err := writer.WriteNewTicketTask(second, dir, ""); err != nil {
+	if err := writer.WriteNewTicketTask(second, dir, "", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -421,7 +421,7 @@ After making changes, run:
 		Description: "Details here.",
 	}
 
-	if err := writer.WriteNewTicketTask(workItem, dir, ""); err != nil {
+	if err := writer.WriteNewTicketTask(workItem, dir, "", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -445,7 +445,7 @@ func TestWriteNewTicketTask_NoInstructionsMd(t *testing.T) {
 		Summary: "No instructions file",
 	}
 
-	if err := writer.WriteNewTicketTask(workItem, dir, ""); err != nil {
+	if err := writer.WriteNewTicketTask(workItem, dir, "", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -466,7 +466,7 @@ func TestWriteNewTicketTask_EmptyInstructionsMd(t *testing.T) {
 		Summary: "Empty instructions",
 	}
 
-	if err := writer.WriteNewTicketTask(workItem, dir, ""); err != nil {
+	if err := writer.WriteNewTicketTask(workItem, dir, "", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -485,7 +485,7 @@ func TestWriteNewTicketTask_InstructionsAfterStandardInstructions(t *testing.T) 
 		Summary: "Order test",
 	}
 
-	if err := writer.WriteNewTicketTask(workItem, dir, ""); err != nil {
+	if err := writer.WriteNewTicketTask(workItem, dir, "", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -553,7 +553,7 @@ func TestWriteNewTicketTask_FallbackInstructions(t *testing.T) {
 		Summary: "Fallback test",
 	}
 
-	if err := writer.WriteNewTicketTask(workItem, dir, "Run `make check` before committing."); err != nil {
+	if err := writer.WriteNewTicketTask(workItem, dir, "Run `make check` before committing.", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -574,7 +574,7 @@ func TestWriteNewTicketTask_RepoFileOverridesFallback(t *testing.T) {
 		Summary: "Override test",
 	}
 
-	if err := writer.WriteNewTicketTask(workItem, dir, "Fallback guidance."); err != nil {
+	if err := writer.WriteNewTicketTask(workItem, dir, "Fallback guidance.", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -594,7 +594,7 @@ func TestWriteNewTicketTask_EmptyFallbackIsNoOp(t *testing.T) {
 		Summary: "Empty fallback",
 	}
 
-	if err := writer.WriteNewTicketTask(workItem, dir, "   "); err != nil {
+	if err := writer.WriteNewTicketTask(workItem, dir, "   ", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -642,7 +642,133 @@ func TestWriteFeedbackTask_RepoFileOverridesFallback(t *testing.T) {
 	assertNotContains(t, content, "Fallback instructions lose.")
 }
 
+// --- Workflow (new-ticket-only) ---
+
+func TestWriteNewTicketTask_FallbackWorkflow(t *testing.T) {
+	dir := t.TempDir()
+	writer := taskfile.NewMarkdownWriter()
+
+	workItem := models.WorkItem{Key: "PROJ-700", Summary: "Workflow test"}
+
+	workflow := "1. Assess\n2. Diagnose\n3. Fix"
+	if err := writer.WriteNewTicketTask(workItem, dir, "", workflow); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := readTaskFile(t, dir)
+
+	assertContains(t, content, "## Workflow")
+	assertContains(t, content, "1. Assess")
+	assertContains(t, content, "3. Fix")
+}
+
+func TestWriteNewTicketTask_WorkflowFile(t *testing.T) {
+	dir := t.TempDir()
+	writer := taskfile.NewMarkdownWriter()
+
+	writeWorkflow(t, dir, "Read assess.md, then fix.md.")
+
+	workItem := models.WorkItem{Key: "PROJ-701", Summary: "Workflow file test"}
+
+	if err := writer.WriteNewTicketTask(workItem, dir, "", ""); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := readTaskFile(t, dir)
+
+	assertContains(t, content, "## Workflow")
+	assertContains(t, content, "Read assess.md, then fix.md.")
+}
+
+func TestWriteNewTicketTask_WorkflowFileOverridesFallback(t *testing.T) {
+	dir := t.TempDir()
+	writer := taskfile.NewMarkdownWriter()
+
+	writeWorkflow(t, dir, "Repo workflow wins.")
+
+	workItem := models.WorkItem{Key: "PROJ-702", Summary: "Override test"}
+
+	if err := writer.WriteNewTicketTask(workItem, dir, "", "Fallback workflow loses."); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := readTaskFile(t, dir)
+
+	assertContains(t, content, "Repo workflow wins.")
+	assertNotContains(t, content, "Fallback workflow loses.")
+}
+
+func TestWriteNewTicketTask_NoWorkflow(t *testing.T) {
+	dir := t.TempDir()
+	writer := taskfile.NewMarkdownWriter()
+
+	workItem := models.WorkItem{Key: "PROJ-703", Summary: "No workflow"}
+
+	if err := writer.WriteNewTicketTask(workItem, dir, "", ""); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := readTaskFile(t, dir)
+	assertNotContains(t, content, "## Workflow")
+}
+
+func TestWriteNewTicketTask_WorkflowAfterProjectInstructions(t *testing.T) {
+	dir := t.TempDir()
+	writer := taskfile.NewMarkdownWriter()
+
+	writeInstructions(t, dir, "Run make test.")
+
+	workItem := models.WorkItem{Key: "PROJ-704", Summary: "Order test"}
+
+	if err := writer.WriteNewTicketTask(workItem, dir, "", "Execute workflow phases."); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := readTaskFile(t, dir)
+
+	idxInstr := strings.Index(content, "## Project Instructions")
+	idxWf := strings.Index(content, "## Workflow")
+	if idxInstr < 0 || idxWf < 0 {
+		t.Fatal("expected both sections")
+	}
+	if idxWf <= idxInstr {
+		t.Error("Workflow should appear after Project Instructions")
+	}
+}
+
+func TestWriteFeedbackTask_NoWorkflowSection(t *testing.T) {
+	dir := t.TempDir()
+	writer := taskfile.NewMarkdownWriter()
+
+	// Even with a workflow file present, feedback should not include it.
+	writeWorkflow(t, dir, "This should not appear.")
+
+	pr := models.PRDetails{Number: 10, Title: "PR", Branch: "b"}
+	comments := []models.PRComment{
+		{Author: models.Author{Username: "r1"}, Body: "Fix this"},
+	}
+
+	if err := writer.WriteFeedbackTask(pr, comments, nil, dir, ""); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := readTaskFile(t, dir)
+	assertNotContains(t, content, "## Workflow")
+	assertNotContains(t, content, "This should not appear")
+}
+
 // --- helpers ---
+
+func writeWorkflow(t *testing.T, dir, content string) {
+	t.Helper()
+	aiBotDir := filepath.Join(dir, ".ai-bot")
+	if err := os.MkdirAll(aiBotDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(aiBotDir, "new-ticket-workflow.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func writeInstructions(t *testing.T, dir, content string) {
 	t.Helper()

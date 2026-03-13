@@ -102,7 +102,7 @@ flowchart TB
 | `tracker/` | `IssueTracker` interface for work item operations. `jira/` sub-package adapts `JiraService`. |
 | `workspace/` | Per-ticket workspace lifecycle: clone, branch, TTL-based cleanup, self-healing re-clone. |
 | `container/` | Container runtime detection, image resolution from repo config, container lifecycle with resource limits. |
-| `taskfile/` | Generates markdown task files describing the work for the AI. Appends project instructions from `.ai-bot/instructions.md` or project-config fallback. |
+| `taskfile/` | Generates markdown task files. Appends universal instructions (all tasks) and workflow (new tickets only) from repo files or project-config fallback. |
 | `projectresolver/` | Maps ticket keys to project settings (component-to-repo, status transitions, imports). |
 | `costtracker/` | Tracks daily AI session costs with file-based persistence and budget enforcement. |
 | `commentfilter/` | Shared bot-loop prevention: ignored users, known bots, thread depth limits. |

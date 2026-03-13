@@ -180,7 +180,7 @@ func (p *Pipeline) executeNewTicket(ctx context.Context, job *jobmanager.Job) (r
 	}
 
 	// --- Step 8: Write task file ---
-	if err := p.taskWriter.WriteNewTicketTask(*workItem, wsPath, settings.Instructions); err != nil {
+	if err := p.taskWriter.WriteNewTicketTask(*workItem, wsPath, settings.Instructions, settings.NewTicketWorkflow); err != nil {
 		return result, fmt.Errorf("write task file: %w", err)
 	}
 

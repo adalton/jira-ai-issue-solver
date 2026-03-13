@@ -50,8 +50,13 @@ type ProjectSettings struct {
 	// .ai-bot/config.yaml (repo-level wins on path conflicts).
 	Imports []ImportConfig
 
-	// Instructions provides project-level AI instructions appended
-	// to the task prompt. Used as a fallback when the target repo
-	// does not have .ai-bot/instructions.md.
+	// Instructions provides universal project-level AI instructions
+	// appended to all task types. Used as a fallback when the target
+	// repo does not have .ai-bot/instructions.md.
 	Instructions string
+
+	// NewTicketWorkflow provides workflow instructions appended only
+	// to new-ticket task files. Used as a fallback when the target
+	// repo does not have .ai-bot/new-ticket-workflow.md.
+	NewTicketWorkflow string
 }

@@ -285,11 +285,18 @@ type ProjectConfig struct {
 	// (repo-level imports take precedence on path conflicts).
 	Imports []ImportConfig `yaml:"imports" mapstructure:"imports"`
 
-	// Instructions provides project-level AI instructions that are
-	// appended to the task prompt. Used to prototype instructions
-	// before committing .ai-bot/instructions.md to the target repo.
-	// The repo-level file takes precedence when it exists.
+	// Instructions provides universal project-level AI instructions
+	// (validation commands, coding standards) appended to all task
+	// types. Used to prototype before committing
+	// .ai-bot/instructions.md to the target repo. The repo-level
+	// file takes precedence when it exists.
 	Instructions string `yaml:"instructions" mapstructure:"instructions"`
+
+	// NewTicketWorkflow provides workflow instructions appended only
+	// to new-ticket task files (not feedback). Used for multi-phase
+	// workflows (assess → diagnose → fix → test → review). The
+	// repo-level .ai-bot/new-ticket-workflow.md takes precedence.
+	NewTicketWorkflow string `yaml:"new_ticket_workflow" mapstructure:"new_ticket_workflow"`
 }
 
 // ImportConfig declares an auxiliary repository to clone into the workspace.

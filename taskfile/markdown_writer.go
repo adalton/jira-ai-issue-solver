@@ -24,7 +24,7 @@ func NewMarkdownWriter() *MarkdownWriter {
 	return &MarkdownWriter{}
 }
 
-func (w *MarkdownWriter) WriteNewTicketTask(workItem models.WorkItem, dir, fallbackInstructions string) error {
+func (w *MarkdownWriter) WriteNewTicketTask(workItem models.WorkItem, dir, fallbackInstructions, fallbackWorkflow string) error {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "# Task: %s\n\n", workItem.Key)
@@ -39,6 +39,10 @@ func (w *MarkdownWriter) WriteNewTicketTask(workItem models.WorkItem, dir, fallb
 	writeNewTicketInstructions(&b, workItem.HasSecurityLevel())
 
 	if err := appendInstructions(&b, dir, fallbackInstructions); err != nil {
+		return err
+	}
+
+	if err := appendWorkflow(&b, dir, fallbackWorkflow); err != nil {
 		return err
 	}
 
@@ -125,6 +129,36 @@ func appendInstructions(b *strings.Builder, dir, fallback string) error {
 	}
 
 	b.WriteString("\n## Project Instructions\n")
+	b.WriteString(content)
+	b.WriteString("\n")
+
+	return nil
+}
+
+// appendWorkflow reads .ai-bot/new-ticket-workflow.md from the
+// workspace and appends its content as a "Workflow" section. If the
+// file does not exist, the fallback string is used instead. If both
+// are empty, nothing is appended. This is only called for new-ticket
+// task files — feedback tasks do not get workflow instructions.
+func appendWorkflow(b *strings.Builder, dir, fallback string) error {
+	path := filepath.Join(dir, NewTicketWorkflowPath)
+
+	data, err := os.ReadFile(path) // #nosec G304 -- path is dir + constant
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read workflow file: %w", err)
+	}
+
+	content := strings.TrimSpace(string(data))
+
+	if content == "" {
+		content = strings.TrimSpace(fallback)
+	}
+
+	if content == "" {
+		return nil
+	}
+
+	b.WriteString("\n## Workflow\n")
 	b.WriteString(content)
 	b.WriteString("\n")
 

@@ -13,13 +13,13 @@ var _ taskfile.Writer = (*Stub)(nil)
 // Set the corresponding Func field to control each method's behavior.
 // When a Func field is nil, the method returns nil.
 type Stub struct {
-	WriteNewTicketTaskFunc func(workItem models.WorkItem, dir, fallbackInstructions string) error
+	WriteNewTicketTaskFunc func(workItem models.WorkItem, dir, fallbackInstructions, fallbackWorkflow string) error
 	WriteFeedbackTaskFunc  func(prDetails models.PRDetails, newComments, addressedComments []models.PRComment, dir, fallbackInstructions string) error
 }
 
-func (s *Stub) WriteNewTicketTask(workItem models.WorkItem, dir, fallbackInstructions string) error {
+func (s *Stub) WriteNewTicketTask(workItem models.WorkItem, dir, fallbackInstructions, fallbackWorkflow string) error {
 	if s.WriteNewTicketTaskFunc != nil {
-		return s.WriteNewTicketTaskFunc(workItem, dir, fallbackInstructions)
+		return s.WriteNewTicketTaskFunc(workItem, dir, fallbackInstructions, fallbackWorkflow)
 	}
 	return nil
 }
