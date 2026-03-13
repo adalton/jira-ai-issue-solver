@@ -35,3 +35,18 @@ func (p *Pipeline) RunImportInstalls(
 ) error {
 	return p.runImportInstalls(ctx, logger, ctr, imports)
 }
+
+// ReadPRDescription exposes readPRDescription for testing.
+func ReadPRDescription(dir string) *PRDescription {
+	return readPRDescription(dir)
+}
+
+// BuildPRContent exposes buildPRContent for testing.
+func BuildPRContent(workItem *models.WorkItem, ticketKey, titlePrefix string, aiPR *PRDescription) (string, string) {
+	return buildPRContent(workItem, ticketKey, titlePrefix, aiPR)
+}
+
+// ExcludeBotFiles exposes excludeBotFiles for testing.
+func ExcludeBotFiles(wsPath string) {
+	excludeBotFiles(wsPath)
+}

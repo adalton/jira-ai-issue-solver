@@ -167,6 +167,7 @@ sequenceDiagram
     P->>CTR: Stop container
 
     P->>WS: Check for changes (git diff)
+    P->>P: Read AI-generated PR description (.ai-bot/pr.md)
     P->>GH: Commit changes via Git Data API
     P->>WS: Sync workspace with remote
     P->>GH: Create pull request

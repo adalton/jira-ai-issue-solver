@@ -156,6 +156,10 @@ func (p *Pipeline) executeNewTicket(ctx context.Context, job *jobmanager.Job) (r
 		zap.String("path", wsPath),
 		zap.Bool("reused", reused))
 
+	// Exclude bot-generated files from git tracking so they never
+	// leak into commits (task.md, session-output.json, pr.md, etc.).
+	excludeBotFiles(wsPath)
+
 	// --- Step 5: Create or switch to branch ---
 	branchName := fmt.Sprintf("%s/%s", p.cfg.BotUsername, job.TicketKey)
 	if err := p.prepareBranch(logger, wsPath, branchName, reused, settings); err != nil {
@@ -291,7 +295,8 @@ func (p *Pipeline) executeNewTicket(ctx context.Context, job *jobmanager.Job) (r
 			zap.Any("validation_passed", session.ValidationPassed),
 			zap.Bool("repo_config_draft", repoCfg.PR.Draft))
 	}
-	prTitle, prBody := buildPRContent(workItem, job.TicketKey, repoCfg.PR.TitlePrefix)
+	aiPR := readPRDescription(wsPath)
+	prTitle, prBody := buildPRContent(workItem, job.TicketKey, repoCfg.PR.TitlePrefix, aiPR)
 
 	pr, err := p.git.CreatePR(models.PRParams{
 		Owner:  settings.Owner,
@@ -479,6 +484,56 @@ func excludeImportPaths(wsPath string, imports []importEntry) error {
 	}
 
 	return nil
+}
+
+// botExcludePatterns lists .ai-bot/ files generated at runtime that
+// should never be committed. Team-authored files like instructions.md
+// and config.yaml are NOT excluded.
+var botExcludePatterns = []string{
+	"/.ai-bot/task.md",
+	"/.ai-bot/session-output.json",
+	"/.ai-bot/pr.md",
+	"/.ai-bot/diagnosis.md",
+}
+
+// excludeBotFiles ensures bot-generated files in .ai-bot/ are excluded
+// from git tracking. Uses .git/info/exclude so the patterns don't
+// require a .gitignore entry in the target repo. Errors are silently
+// ignored — this is a best-effort safety net.
+func excludeBotFiles(wsPath string) {
+	excludePath := filepath.Join(wsPath, ".git", "info", "exclude")
+
+	existing := make(map[string]bool)
+	// #nosec G304 - path is constructed from workspace root, not user input
+	if data, err := os.ReadFile(excludePath); err == nil {
+		for line := range strings.SplitSeq(string(data), "\n") {
+			existing[line] = true
+		}
+	}
+
+	var toAdd []string
+	for _, pattern := range botExcludePatterns {
+		if !existing[pattern] {
+			toAdd = append(toAdd, pattern)
+		}
+	}
+
+	if len(toAdd) == 0 {
+		return
+	}
+
+	// #nosec G304 - path is constructed from workspace root, not user input
+	f, err := os.OpenFile(excludePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer func() { _ = f.Close() }()
+
+	for _, pattern := range toAdd {
+		if _, err := fmt.Fprintln(f, pattern); err != nil {
+			return
+		}
+	}
 }
 
 // runImportInstalls executes install commands for imports that declare
@@ -677,10 +732,19 @@ func shouldCreateDraft(session SessionOutput, exitCode int, repoDraft bool) bool
 
 // buildPRContent generates the PR title and body from the work item.
 // Security-level tickets get redacted content.
-func buildPRContent(workItem *models.WorkItem, ticketKey, titlePrefix string) (title, body string) {
+func buildPRContent(workItem *models.WorkItem, ticketKey, titlePrefix string, aiPR *PRDescription) (title, body string) {
 	if workItem.HasSecurityLevel() {
+		// Security-level tickets always use redacted content —
+		// the AI might leak vulnerability details in its PR description.
 		title = fmt.Sprintf("%s: Security fix", ticketKey)
 		body = fmt.Sprintf("Security fix for %s.\n\nDetails redacted due to security level.", ticketKey)
+	} else if aiPR != nil && aiPR.Title != "" {
+		// AI-generated PR description takes precedence over Jira-derived.
+		title = fmt.Sprintf("%s: %s", ticketKey, aiPR.Title)
+		body = fmt.Sprintf("Resolves %s", ticketKey)
+		if aiPR.Body != "" {
+			body += "\n\n" + aiPR.Body
+		}
 	} else {
 		title = fmt.Sprintf("%s: %s", ticketKey, workItem.Summary)
 		body = fmt.Sprintf("Resolves %s\n\n## Summary\n%s", ticketKey, workItem.Summary)

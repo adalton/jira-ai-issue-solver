@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"jira-ai-issue-solver/taskfile"
 )
 
 // sessionOutputPath is the path, relative to the workspace root,
@@ -26,6 +29,39 @@ type SessionOutput struct {
 
 	// Summary is a brief description of what the AI did.
 	Summary string `json:"summary"`
+}
+
+// PRDescription holds the AI-generated PR title and body parsed from
+// .ai-bot/pr.md. The first non-empty line is the title; remaining
+// lines form the body.
+type PRDescription struct {
+	Title string
+	Body  string
+}
+
+// readPRDescription reads the AI-generated PR description from the
+// workspace. Returns nil if the file does not exist, is empty, or
+// contains only whitespace. The first non-empty line is used as the
+// PR title; the rest (after trimming a leading blank line) is the body.
+func readPRDescription(dir string) *PRDescription {
+	path := filepath.Join(dir, taskfile.PRDescriptionPath)
+
+	data, err := os.ReadFile(path) // #nosec G304 -- path is dir + constant
+	if err != nil {
+		return nil
+	}
+
+	content := strings.TrimSpace(string(data))
+	if content == "" {
+		return nil
+	}
+
+	// Split into title (first line) and body (rest).
+	title, body, _ := strings.Cut(content, "\n")
+	return &PRDescription{
+		Title: strings.TrimSpace(title),
+		Body:  strings.TrimSpace(body),
+	}
 }
 
 // readSessionOutput reads and parses the session output file from the

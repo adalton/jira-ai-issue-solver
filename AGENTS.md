@@ -64,6 +64,7 @@ Key configuration features:
    - Generates a task file describing the work (appends project instructions from `.ai-bot/instructions.md` or project-config fallback)
    - Resolves container image from repo-level config (`.ai-bot/container.json`, `.devcontainer/`) or global default
    - Starts a container, runs import install commands (if configured), then runs the AI provider
+   - Reads AI-generated PR description (`.ai-bot/pr.md`) if present; falls back to Jira-derived content
    - Commits changes, pushes, and creates a PR
    - Transitions the ticket through configured statuses and posts PR link
 4. **PR Feedback Processing**: `FeedbackScanner` monitors "in review" tickets, finds unaddressed review comments (filtering bots and ignored users), and submits feedback jobs through the same `Coordinator` → `Pipeline` path

@@ -16,6 +16,16 @@ The bot checks for the following repo-level files:
 | `.ai-bot/container.json` | Bot-specific container settings: image, env, resource limits |
 | `.devcontainer/devcontainer.json` | Standard devcontainer config (practical subset supported) |
 
+The AI agent may also write files to `.ai-bot/` at runtime:
+
+| File | Purpose |
+|------|---------|
+| `.ai-bot/pr.md` | AI-generated PR title (first line) and description (remaining lines); used instead of Jira-derived content |
+| `.ai-bot/task.md` | Task file written by the bot (read by the AI) |
+| `.ai-bot/session-output.json` | Session metadata written by the wrapper script |
+
+These runtime files are automatically excluded from commits via `.git/info/exclude`.
+
 These files live in the **target repository** (the repo the bot clones and
 works on), not in the bot's own repository.
 
@@ -269,6 +279,7 @@ config, etc.).
 | You want the AI to follow a multi-step workflow | `.ai-bot/instructions.md` + `imports` in `.ai-bot/config.yaml` |
 | You want shared AI skills/guidelines from another repo | `imports` in `.ai-bot/config.yaml` |
 | You want provider-agnostic AI guidance | `.ai-bot/instructions.md` |
+| You want the AI to generate PR titles/descriptions | Instruct the AI to write `.ai-bot/pr.md` via `instructions.md` |
 
 ## Complete Example
 

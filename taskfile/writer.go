@@ -34,6 +34,13 @@ const (
 	// for teams to provide provider-agnostic guidance to the AI
 	// (workflow references, validation commands, coding standards).
 	InstructionsPath = ".ai-bot/instructions.md"
+
+	// PRDescriptionPath is the path, relative to the workspace root,
+	// where the AI agent may write a PR title and description. If
+	// present, the first line is used as the PR title and the
+	// remaining lines as the PR body. This file is read by the bot
+	// after the AI session completes.
+	PRDescriptionPath = ".ai-bot/pr.md"
 )
 
 // Writer generates task files that the AI agent reads to understand

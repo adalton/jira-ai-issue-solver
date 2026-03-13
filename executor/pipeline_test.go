@@ -1787,6 +1787,204 @@ func TestExecuteNewTicket_ImportInstallFailure_StopsContainer(t *testing.T) {
 	}
 }
 
+// --- readPRDescription ---
+
+func TestReadPRDescription_FileExists(t *testing.T) {
+	dir := t.TempDir()
+	aiBotDir := filepath.Join(dir, ".ai-bot")
+	if err := os.MkdirAll(aiBotDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	content := "Fix NPE in UserService\n\n## Summary\nAdded null check for photo field.\n"
+	if err := os.WriteFile(filepath.Join(aiBotDir, "pr.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pr := executor.ReadPRDescription(dir)
+	if pr == nil {
+		t.Fatal("expected non-nil PRDescription")
+	}
+	if pr.Title != "Fix NPE in UserService" {
+		t.Errorf("Title = %q, want %q", pr.Title, "Fix NPE in UserService")
+	}
+	if !strings.Contains(pr.Body, "Added null check") {
+		t.Errorf("Body should contain 'Added null check', got: %s", pr.Body)
+	}
+}
+
+func TestReadPRDescription_FileMissing(t *testing.T) {
+	dir := t.TempDir()
+	pr := executor.ReadPRDescription(dir)
+	if pr != nil {
+		t.Errorf("expected nil when file missing, got %+v", pr)
+	}
+}
+
+func TestReadPRDescription_EmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	aiBotDir := filepath.Join(dir, ".ai-bot")
+	if err := os.MkdirAll(aiBotDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(aiBotDir, "pr.md"), []byte("  \n  \n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pr := executor.ReadPRDescription(dir)
+	if pr != nil {
+		t.Errorf("expected nil for whitespace-only file, got %+v", pr)
+	}
+}
+
+func TestReadPRDescription_TitleOnly(t *testing.T) {
+	dir := t.TempDir()
+	aiBotDir := filepath.Join(dir, ".ai-bot")
+	if err := os.MkdirAll(aiBotDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(aiBotDir, "pr.md"), []byte("Just a title\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pr := executor.ReadPRDescription(dir)
+	if pr == nil {
+		t.Fatal("expected non-nil PRDescription")
+	}
+	if pr.Title != "Just a title" {
+		t.Errorf("Title = %q, want %q", pr.Title, "Just a title")
+	}
+	if pr.Body != "" {
+		t.Errorf("Body = %q, want empty", pr.Body)
+	}
+}
+
+// --- buildPRContent ---
+
+func TestBuildPRContent_Default(t *testing.T) {
+	workItem := &models.WorkItem{
+		Key:         "PROJ-1",
+		Summary:     "Fix bug",
+		Description: "Detailed description.",
+	}
+	title, body := executor.BuildPRContent(workItem, "PROJ-1", "", nil)
+	if title != "PROJ-1: Fix bug" {
+		t.Errorf("Title = %q, want %q", title, "PROJ-1: Fix bug")
+	}
+	if !strings.Contains(body, "Resolves PROJ-1") {
+		t.Error("body should contain 'Resolves PROJ-1'")
+	}
+	if !strings.Contains(body, "Detailed description.") {
+		t.Error("body should contain description")
+	}
+}
+
+func TestBuildPRContent_WithAIPR(t *testing.T) {
+	workItem := &models.WorkItem{Key: "PROJ-1", Summary: "Fix bug"}
+	aiPR := &executor.PRDescription{
+		Title: "Fix null pointer in getProfile()",
+		Body:  "## Summary\nAdded null check.",
+	}
+	title, body := executor.BuildPRContent(workItem, "PROJ-1", "", aiPR)
+	if title != "PROJ-1: Fix null pointer in getProfile()" {
+		t.Errorf("Title = %q, want %q", title, "PROJ-1: Fix null pointer in getProfile()")
+	}
+	if !strings.Contains(body, "Added null check") {
+		t.Error("body should contain AI-generated content")
+	}
+	// Jira description should NOT be present.
+	if strings.Contains(body, "Fix bug") {
+		t.Error("body should not contain Jira summary when AI PR is used")
+	}
+}
+
+func TestBuildPRContent_SecurityLevelIgnoresAIPR(t *testing.T) {
+	workItem := &models.WorkItem{
+		Key:           "SEC-1",
+		Summary:       "Fix auth bypass",
+		SecurityLevel: "Embargoed",
+	}
+	aiPR := &executor.PRDescription{
+		Title: "Fix auth bypass in login handler",
+		Body:  "The auth handler skips validation when...",
+	}
+	title, body := executor.BuildPRContent(workItem, "SEC-1", "", aiPR)
+	if !strings.Contains(title, "Security fix") {
+		t.Errorf("Title should be redacted, got: %s", title)
+	}
+	if strings.Contains(body, "auth bypass") {
+		t.Error("body should not contain AI content for security-level tickets")
+	}
+	if !strings.Contains(body, "redacted") {
+		t.Error("body should mention redaction")
+	}
+}
+
+func TestBuildPRContent_AIPREmptyTitle_FallsBack(t *testing.T) {
+	workItem := &models.WorkItem{Key: "PROJ-1", Summary: "Fix bug"}
+	aiPR := &executor.PRDescription{Title: "", Body: "some body"}
+	title, _ := executor.BuildPRContent(workItem, "PROJ-1", "", aiPR)
+	if title != "PROJ-1: Fix bug" {
+		t.Errorf("Title = %q, want Jira fallback %q", title, "PROJ-1: Fix bug")
+	}
+}
+
+func TestBuildPRContent_WithTitlePrefix(t *testing.T) {
+	workItem := &models.WorkItem{Key: "PROJ-1", Summary: "Fix bug"}
+	aiPR := &executor.PRDescription{Title: "AI title", Body: "AI body"}
+	title, _ := executor.BuildPRContent(workItem, "PROJ-1", "[bot]", aiPR)
+	if title != "[bot] PROJ-1: AI title" {
+		t.Errorf("Title = %q, want %q", title, "[bot] PROJ-1: AI title")
+	}
+}
+
+// --- excludeBotFiles ---
+
+func TestExcludeBotFiles_WritesPatterns(t *testing.T) {
+	dir := t.TempDir()
+	gitInfoDir := filepath.Join(dir, ".git", "info")
+	if err := os.MkdirAll(gitInfoDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	executor.ExcludeBotFiles(dir)
+
+	excludeFile := filepath.Join(gitInfoDir, "exclude")
+	data, err := os.ReadFile(excludeFile) // #nosec G304 -- test reads from t.TempDir()
+	if err != nil {
+		t.Fatalf("failed to read exclude file: %v", err)
+	}
+	content := string(data)
+
+	for _, pattern := range []string{"/.ai-bot/task.md", "/.ai-bot/pr.md", "/.ai-bot/session-output.json", "/.ai-bot/diagnosis.md"} {
+		if !strings.Contains(content, pattern) {
+			t.Errorf("exclude file should contain %q", pattern)
+		}
+	}
+}
+
+func TestExcludeBotFiles_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+	gitInfoDir := filepath.Join(dir, ".git", "info")
+	if err := os.MkdirAll(gitInfoDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	executor.ExcludeBotFiles(dir)
+	executor.ExcludeBotFiles(dir)
+
+	excludeFile := filepath.Join(gitInfoDir, "exclude")
+	data, err := os.ReadFile(excludeFile) // #nosec G304 -- test reads from t.TempDir()
+	if err != nil {
+		t.Fatalf("failed to read exclude file: %v", err)
+	}
+
+	// Each pattern should appear exactly once.
+	count := strings.Count(string(data), "/.ai-bot/task.md")
+	if count != 1 {
+		t.Errorf("task.md pattern appeared %d times, want 1", count)
+	}
+}
+
 func equalSlice(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

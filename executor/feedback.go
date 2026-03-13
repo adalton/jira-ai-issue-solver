@@ -69,6 +69,8 @@ func (p *Pipeline) executeFeedback(ctx context.Context, job *jobmanager.Job) (re
 		zap.String("path", wsPath),
 		zap.Bool("reused", reused))
 
+	excludeBotFiles(wsPath)
+
 	// --- Step 5: Switch to branch and sync with remote ---
 	if err := p.git.SwitchBranch(wsPath, branchName); err != nil {
 		return result, fmt.Errorf("switch to branch: %w", err)
