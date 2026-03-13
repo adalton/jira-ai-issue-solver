@@ -102,12 +102,12 @@ flowchart TB
 | `tracker/` | `IssueTracker` interface for work item operations. `jira/` sub-package adapts `JiraService`. |
 | `workspace/` | Per-ticket workspace lifecycle: clone, branch, TTL-based cleanup, self-healing re-clone. |
 | `container/` | Container runtime detection, image resolution from repo config, container lifecycle with resource limits. |
-| `taskfile/` | Generates markdown task files describing the work for the AI. |
-| `projectresolver/` | Maps ticket keys to project settings (component-to-repo, status transitions). |
+| `taskfile/` | Generates markdown task files describing the work for the AI. Appends `.ai-bot/instructions.md` when present. |
+| `projectresolver/` | Maps ticket keys to project settings (component-to-repo, status transitions, imports). |
 | `costtracker/` | Tracks daily AI session costs with file-based persistence and budget enforcement. |
 | `commentfilter/` | Shared bot-loop prevention: ignored users, known bots, thread depth limits. |
 | `recovery/` | Startup crash recovery: orphan container cleanup, stuck ticket reset, workspace TTL enforcement. |
-| `repoconfig/` | Parses `.ai-bot/config.yaml` from target repositories for per-repo settings. |
+| `repoconfig/` | Parses `.ai-bot/config.yaml` from target repositories for per-repo settings (PR, AI, imports). |
 | `services/` | Infrastructure clients: `JiraService` (REST API), `GitHubService` (App auth, Git Data API, fork management). |
 | `models/` | Configuration (`Config`), Jira API types, domain types (`WorkItem`, `SearchCriteria`, `ProjectSettings`). |
 
@@ -155,7 +155,9 @@ sequenceDiagram
     P->>P: Resolve project config, map component to repo
     P->>WS: Create workspace (clone + branch)
     WS->>GH: Clone repository
-    P->>P: Write task file (.ai-bot/task.md)
+    P->>P: Load repo config (.ai-bot/config.yaml)
+    P->>GH: Clone imports (auxiliary repos into workspace)
+    P->>P: Write task file (.ai-bot/task.md + instructions.md)
     P->>CTR: Resolve container config
     P->>CTR: Start container (workspace mounted)
     CTR->>AI: Run AI CLI with task file
@@ -196,7 +198,8 @@ sequenceDiagram
 
     C->>P: Execute(job)
     P->>P: Reuse existing workspace (sync with remote)
-    P->>P: Write feedback task file
+    P->>P: Load repo config, clone imports (if new)
+    P->>P: Write feedback task file (+ instructions.md)
     P->>CTR: Start container
     CTR->>AI: Run AI CLI with feedback task
     AI->>AI: Address review comments

@@ -1753,6 +1753,32 @@ func (s *GitHubServiceImpl) ReplyToComment(owner, repo string, prNumber int, com
 	return nil
 }
 
+// CloneImport clones an auxiliary repository into destDir. If ref is
+// non-empty, the specified branch/tag/commit is checked out. This is a
+// shallow clone (depth 1) since import repos are read-only references.
+func (s *GitHubServiceImpl) CloneImport(url, destDir, ref string) error {
+	args := []string{"clone", "--depth", "1"}
+	if ref != "" {
+		args = append(args, "--branch", ref)
+	}
+	args = append(args, url, destDir)
+
+	cmd := s.executor("git", args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git clone %s into %s: %w, stderr: %s", url, destDir, err, stderr.String())
+	}
+
+	s.logger.Debug("Cloned import repo",
+		zap.String("url", url),
+		zap.String("dest", destDir),
+		zap.String("ref", ref))
+
+	return nil
+}
+
 // fetchPRReviewCommentsPage fetches a single page of PR review comments
 func (s *GitHubServiceImpl) fetchPRReviewCommentsPage(owner, repo string, prNumber, page, perPage int) ([]models.GitHubPRComment, error) {
 	installationID, err := s.getInstallationIDForRepo(owner, repo)

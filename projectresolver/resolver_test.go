@@ -618,6 +618,70 @@ func TestResolveProject_ContainerSettingsPassedThrough(t *testing.T) {
 	}
 }
 
+// --- Imports propagation ---
+
+func TestResolveProject_PropagatesImports(t *testing.T) {
+	cfg := minimalConfig()
+	cfg.Jira.Projects[0].Imports = []models.ImportConfig{
+		{Repo: "https://github.com/org/workflows", Path: ".ai-workflows", Ref: "main"},
+		{Repo: "https://github.com/org/tools", Path: ".tools"},
+	}
+
+	r, err := projectresolver.NewConfigResolver(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	wi := models.WorkItem{
+		Key:        "PROJ-1",
+		Type:       "Bug",
+		Components: []string{"backend"},
+	}
+	settings, err := r.ResolveProject(wi)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(settings.Imports) != 2 {
+		t.Fatalf("len(Imports) = %d, want 2", len(settings.Imports))
+	}
+	if settings.Imports[0].Repo != "https://github.com/org/workflows" {
+		t.Errorf("Imports[0].Repo = %q, want workflows URL", settings.Imports[0].Repo)
+	}
+	if settings.Imports[0].Ref != "main" {
+		t.Errorf("Imports[0].Ref = %q, want %q", settings.Imports[0].Ref, "main")
+	}
+	if settings.Imports[1].Path != ".tools" {
+		t.Errorf("Imports[1].Path = %q, want %q", settings.Imports[1].Path, ".tools")
+	}
+}
+
+func TestResolveProject_NoImports_EmptySlice(t *testing.T) {
+	cfg := minimalConfig()
+
+	r, err := projectresolver.NewConfigResolver(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	wi := models.WorkItem{
+		Key:        "PROJ-1",
+		Type:       "Bug",
+		Components: []string{"backend"},
+	}
+	settings, err := r.ResolveProject(wi)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if settings.Imports == nil {
+		t.Error("Imports should be non-nil empty slice")
+	}
+	if len(settings.Imports) != 0 {
+		t.Errorf("len(Imports) = %d, want 0", len(settings.Imports))
+	}
+}
+
 // --- helpers ---
 
 // minimalConfig returns a Config with a single project, one component

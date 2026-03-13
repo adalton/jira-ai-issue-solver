@@ -278,6 +278,26 @@ type ProjectConfig struct {
 	// are still overridden by repo-level config
 	// (.ai-bot/container.json or .devcontainer/devcontainer.json).
 	Container ContainerSettings `yaml:"container" mapstructure:"container"`
+
+	// Imports declares auxiliary repositories to clone into the
+	// workspace before AI execution. These are merged with any
+	// imports declared in the target repo's .ai-bot/config.yaml
+	// (repo-level imports take precedence on path conflicts).
+	Imports []ImportConfig `yaml:"imports" mapstructure:"imports"`
+}
+
+// ImportConfig declares an auxiliary repository to clone into the workspace.
+type ImportConfig struct {
+	// Repo is the clone URL (e.g., "https://github.com/org/repo").
+	Repo string `yaml:"repo" mapstructure:"repo"`
+
+	// Path is the destination directory relative to the workspace
+	// root (e.g., ".ai-workflows"). Required.
+	Path string `yaml:"path" mapstructure:"path"`
+
+	// Ref is the branch, tag, or commit to check out. Empty means
+	// the remote's default branch.
+	Ref string `yaml:"ref" mapstructure:"ref"`
 }
 
 type JiraConfig struct {
@@ -632,7 +652,7 @@ func LoadConfig(configPath string) (*Config, error) {
 	// Unmarshal into struct
 	var config Config
 	if err := v.Unmarshal(&config, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
-		func(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
+		func(f reflect.Type, t reflect.Type, data any) (any, error) {
 			if t == reflect.TypeOf(TicketTypeStatusTransitions{}) {
 				var result TicketTypeStatusTransitions
 				if err := result.UnmarshalMapstructure(data); err != nil {

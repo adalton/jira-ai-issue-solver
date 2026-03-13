@@ -182,6 +182,72 @@ func TestLoad_OnlyValidationCommands(t *testing.T) {
 	}
 }
 
+// --- Imports ---
+
+func TestLoad_WithImports(t *testing.T) {
+	dir := t.TempDir()
+	writeConfig(t, dir, `imports:
+  - repo: https://github.com/org/workflows
+    path: .ai-workflows
+    ref: main
+  - repo: https://github.com/org/tools
+    path: .tools
+`)
+
+	cfg, err := repoconfig.Load(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(cfg.Imports) != 2 {
+		t.Fatalf("len(Imports) = %d, want 2", len(cfg.Imports))
+	}
+	if cfg.Imports[0].Repo != "https://github.com/org/workflows" {
+		t.Errorf("Imports[0].Repo = %q, want %q", cfg.Imports[0].Repo, "https://github.com/org/workflows")
+	}
+	if cfg.Imports[0].Path != ".ai-workflows" {
+		t.Errorf("Imports[0].Path = %q, want %q", cfg.Imports[0].Path, ".ai-workflows")
+	}
+	if cfg.Imports[0].Ref != "main" {
+		t.Errorf("Imports[0].Ref = %q, want %q", cfg.Imports[0].Ref, "main")
+	}
+	if cfg.Imports[1].Ref != "" {
+		t.Errorf("Imports[1].Ref = %q, want empty", cfg.Imports[1].Ref)
+	}
+}
+
+func TestLoad_NoImports_NonNilSlice(t *testing.T) {
+	dir := t.TempDir()
+	writeConfig(t, dir, `pr:
+  draft: true
+`)
+
+	cfg, err := repoconfig.Load(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.Imports == nil {
+		t.Error("Imports should be non-nil empty slice")
+	}
+	if len(cfg.Imports) != 0 {
+		t.Errorf("len(Imports) = %d, want 0", len(cfg.Imports))
+	}
+}
+
+func TestLoad_MissingFile_ImportsNonNil(t *testing.T) {
+	dir := t.TempDir()
+
+	cfg, err := repoconfig.Load(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.Imports == nil {
+		t.Error("Imports should be non-nil when file is missing")
+	}
+}
+
 // --- helpers ---
 
 func writeConfig(t *testing.T, dir, content string) {

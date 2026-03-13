@@ -93,34 +93,39 @@ func (p *Pipeline) executeFeedback(ctx context.Context, job *jobmanager.Job) (re
 		return result, nil
 	}
 
-	// --- Step 7: Write feedback task file ---
-	if err := p.taskWriter.WriteFeedbackTask(
-		*prDetails, newComments, addressedComments, wsPath); err != nil {
-		return result, fmt.Errorf("write task file: %w", err)
-	}
-
-	// --- Step 8: Determine AI provider ---
-	provider := p.resolveProvider(settings)
-	logger.Info("AI provider selected", zap.String("provider", provider))
-
-	// --- Step 9: Load repo config ---
+	// --- Step 7: Load repo config ---
 	repoCfg, err := repoconfig.Load(wsPath)
 	if err != nil {
 		logger.Warn("Failed to load repo config, using defaults", zap.Error(err))
 		repoCfg = repoconfig.Default()
 	}
 
-	// --- Step 10: Build AI command ---
+	// --- Step 8: Clone imports ---
+	if err := p.cloneImports(logger, wsPath, settings, repoCfg); err != nil {
+		return result, err
+	}
+
+	// --- Step 9: Write feedback task file ---
+	if err := p.taskWriter.WriteFeedbackTask(
+		*prDetails, newComments, addressedComments, wsPath); err != nil {
+		return result, fmt.Errorf("write task file: %w", err)
+	}
+
+	// --- Step 10: Determine AI provider ---
+	provider := p.resolveProvider(settings)
+	logger.Info("AI provider selected", zap.String("provider", provider))
+
+	// --- Step 11: Build AI command ---
 	sp := buildScriptParams(provider, repoCfg)
 	execCommand := buildExecCommand(sp)
 
-	// --- Step 11: Resolve and start container ---
+	// --- Step 12: Resolve and start container ---
 	ctr, err = p.startContainer(ctx, logger, wsPath, job.TicketKey, provider, settings)
 	if err != nil {
 		return result, fmt.Errorf("start container: %w", err)
 	}
 
-	// --- Step 11a: Strip remote auth before AI execution ---
+	// --- Step 12a: Strip remote auth before AI execution ---
 	if err := p.git.StripRemoteAuth(wsPath); err != nil {
 		return result, fmt.Errorf("strip remote auth: %w", err)
 	}
@@ -133,7 +138,7 @@ func (p *Pipeline) executeFeedback(ctx context.Context, job *jobmanager.Job) (re
 		}
 	}()
 
-	// --- Step 12: Execute AI agent ---
+	// --- Step 13: Execute AI agent ---
 	execCtx := ctx
 	if p.cfg.SessionTimeout > 0 {
 		var cancel context.CancelFunc
@@ -159,7 +164,7 @@ func (p *Pipeline) executeFeedback(ctx context.Context, job *jobmanager.Job) (re
 		zap.String("summary", session.Summary))
 	result.CostUSD = session.CostUSD
 
-	// --- Step 12a: Restore remote auth ---
+	// --- Step 13a: Restore remote auth ---
 	if err := p.git.RestoreRemoteAuth(wsPath, settings.Owner, settings.Repo); err != nil {
 		return result, fmt.Errorf("restore remote auth: %w", err)
 	}
@@ -172,7 +177,7 @@ func (p *Pipeline) executeFeedback(ctx context.Context, job *jobmanager.Job) (re
 		return result, fmt.Errorf("AI session failed: %w", execErr)
 	}
 
-	// --- Step 13: Check for changes ---
+	// --- Step 14: Check for changes ---
 	hasChanges, err := p.git.HasChanges(wsPath)
 	if err != nil {
 		return result, fmt.Errorf("check changes: %w", err)
@@ -181,7 +186,7 @@ func (p *Pipeline) executeFeedback(ctx context.Context, job *jobmanager.Job) (re
 		return result, fmt.Errorf("AI produced no changes (exit code: %d)", exitCode)
 	}
 
-	// --- Step 14: Commit via GitHub API ---
+	// --- Step 15: Commit via GitHub API ---
 	commitMsg := fmt.Sprintf("%s: address PR feedback", job.TicketKey)
 	sha, err := p.git.CommitChanges(
 		settings.Owner, settings.Repo, branchName,
@@ -194,12 +199,12 @@ func (p *Pipeline) executeFeedback(ctx context.Context, job *jobmanager.Job) (re
 		return result, fmt.Errorf("commit changes: %w", err)
 	}
 
-	// --- Step 15: Post-commit sync ---
+	// --- Step 16: Post-commit sync ---
 	if err := p.git.SyncWithRemote(wsPath, branchName); err != nil {
 		return result, fmt.Errorf("sync with remote: %w", err)
 	}
 
-	// --- Step 16: Reply to addressed comments ---
+	// --- Step 17: Reply to addressed comments ---
 	shortSHA := sha
 	if len(shortSHA) > 7 {
 		shortSHA = shortSHA[:7]

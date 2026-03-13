@@ -7,11 +7,12 @@ defaults.
 
 ## Configuration Files
 
-The bot checks for two types of repo-level files:
+The bot checks for the following repo-level files:
 
 | File | Purpose |
 |------|---------|
-| `.ai-bot/config.yaml` | Bot-specific settings: PR preferences, validation commands, AI provider config |
+| `.ai-bot/config.yaml` | Bot-specific settings: PR preferences, validation commands, AI provider config, repo imports |
+| `.ai-bot/instructions.md` | AI guidance: workflow references, validation commands, coding standards (injected into the task prompt) |
 | `.ai-bot/container.json` | Bot-specific container settings: image, env, resource limits |
 | `.devcontainer/devcontainer.json` | Standard devcontainer config (practical subset supported) |
 
@@ -140,6 +141,42 @@ Environment variables merge additively: repo-level keys override bot-level
 keys with the same name, but bot-level keys not present in the repo config
 are preserved.
 
+## AI Instructions (`.ai-bot/instructions.md`)
+
+This is the primary mechanism for giving the AI agent project-specific
+guidance. The file contents are appended to the task prompt as a
+"Project Instructions" section, so the AI sees them regardless of which
+provider is in use (Claude, Gemini, etc.).
+
+```markdown
+## Workflow
+Follow the bugfix workflow at .ai-workflows/bugfix/skills/controller.md.
+
+## Validation
+After making changes, run these commands to verify correctness:
+- `make build`
+- `make test`
+- `make lint`
+
+## Coding Standards
+- Follow the existing code style in the repository.
+- Add unit tests for all new functions.
+- Do not modify generated files.
+```
+
+**Key characteristics:**
+
+- **Provider-agnostic**: Unlike `CLAUDE.md` or `GEMINI.md`, this file
+  reaches every AI provider through the task prompt.
+- **Read automatically**: The bot reads this file before writing the task
+  file. No configuration needed — just create the file.
+- **Optional**: If the file is absent or empty, nothing is appended. The
+  AI still gets the standard instructions ("implement this task, validate
+  your changes, don't push to git").
+- **Composable with imports**: Use `imports` in `.ai-bot/config.yaml` to
+  clone a shared workflow repo, then reference the imported files from
+  `instructions.md`.
+
 ## Bot Configuration (`.ai-bot/config.yaml`)
 
 This file provides hints for the AI agent and settings for the bot's PR
@@ -154,6 +191,16 @@ validation_commands:
   - make build
   - make lint
   - make test
+
+# Auxiliary repositories to clone into the workspace before AI execution.
+# Useful for shared workflow skills, scripts, guidelines, or tooling.
+# These are cloned once; on workspace reuse, existing directories are
+# skipped. Repo-level imports take precedence over project-level imports
+# (from the bot's config.yaml) when both declare the same path.
+imports:
+  - repo: https://github.com/your-org/ai-workflows
+    path: .ai-workflows       # destination relative to workspace root
+    ref: main                  # branch/tag/commit (optional; default branch if omitted)
 
 # Pull request creation settings.
 pr:
@@ -197,6 +244,10 @@ config, etc.).
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `validation_commands` | string[] | `[]` | Shell commands for validation (hints for AI) |
+| `imports` | object[] | `[]` | Auxiliary repos to clone into the workspace |
+| `imports[].repo` | string | — | Clone URL of the auxiliary repo (required) |
+| `imports[].path` | string | — | Destination directory relative to workspace root (required) |
+| `imports[].ref` | string | `""` | Branch, tag, or commit to check out (default branch if empty) |
 | `pr.draft` | bool | `false` | Create PRs as drafts |
 | `pr.title_prefix` | string | `""` | Prefix for PR titles |
 | `pr.labels` | string[] | `[]` | Labels to apply to PRs |
@@ -210,24 +261,58 @@ config, etc.).
 | You have a pre-built dev image with your toolchain | `.ai-bot/container.json` |
 | You already have a devcontainer config with an `image` field | `.devcontainer/devcontainer.json` (no extra file needed) |
 | You want to customize PR labels or titles | `.ai-bot/config.yaml` |
-| You want to tell the AI about your build/test commands | `.ai-bot/config.yaml` |
+| You want to tell the AI about your build/test commands | `.ai-bot/instructions.md` |
 | You want to restrict which tools the AI can use | `.ai-bot/config.yaml` |
 | Your devcontainer uses a Dockerfile (no `image` field) | `.ai-bot/container.json` (with a pre-built image) |
+| You want the AI to follow a multi-step workflow | `.ai-bot/instructions.md` + `imports` in `.ai-bot/config.yaml` |
+| You want shared AI skills/guidelines from another repo | `imports` in `.ai-bot/config.yaml` |
+| You want provider-agnostic AI guidance | `.ai-bot/instructions.md` |
 
 ## Complete Example
 
-A repository with all three files:
+A repository with all configuration files and a shared workflow import:
 
 ```text
 your-repo/
 ├── .ai-bot/
-│   ├── config.yaml          # Bot + AI settings
+│   ├── config.yaml          # Bot + AI settings + imports
+│   ├── instructions.md      # AI guidance (injected into task prompt)
 │   └── container.json       # Container settings (takes priority over devcontainer)
 ├── .devcontainer/
 │   └── devcontainer.json    # Standard devcontainer (used if no .ai-bot/container.json)
 └── ...
 ```
 
+With `.ai-bot/config.yaml`:
+
+```yaml
+imports:
+  - repo: https://github.com/your-org/ai-workflows
+    path: .ai-workflows
+    ref: main
+
+validation_commands:
+  - make build
+  - make test
+
+pr:
+  title_prefix: "[AI]"
+  labels:
+    - ai-generated
+```
+
+And `.ai-bot/instructions.md`:
+
+```markdown
+## Workflow
+Follow the bugfix workflow at .ai-workflows/bugfix/skills/controller.md.
+
+## Validation
+After making changes, run `make build`, `make test`, and `make lint`.
+Fix all errors before finishing.
+```
+
 In practice, most teams need only one or two of these files. If you already
 have a `.devcontainer/devcontainer.json` with an `image` field and don't
-need custom bot settings, no additional files are needed.
+need custom bot settings, no additional files are needed. Adding just an
+`instructions.md` is the quickest way to improve AI output quality.

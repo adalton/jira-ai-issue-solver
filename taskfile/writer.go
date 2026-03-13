@@ -26,6 +26,14 @@ const (
 	// the task file is written. The AI agent reads this file to
 	// discover its task.
 	TaskFilePath = ".ai-bot/task.md"
+
+	// InstructionsPath is the path, relative to the workspace root,
+	// where optional project-specific AI instructions live. If this
+	// file exists, its contents are appended to the task file as a
+	// "Project Instructions" section. This is the primary mechanism
+	// for teams to provide provider-agnostic guidance to the AI
+	// (workflow references, validation commands, coding standards).
+	InstructionsPath = ".ai-bot/instructions.md"
 )
 
 // Writer generates task files that the AI agent reads to understand

@@ -82,6 +82,17 @@ jira:
       #     - source: "/home/user/.cache/go-build"
       #       target: "/home/builder/.cache/go-build"
 
+      # Auxiliary repositories to clone into the workspace before AI
+      # execution (optional). These are merged with imports from the
+      # target repo's .ai-bot/config.yaml — repo-level imports take
+      # precedence on path conflicts. Useful for providing shared
+      # AI workflows, skills, or guidelines to all repos in a project
+      # without requiring each repo to declare imports individually.
+      # imports:
+      #   - repo: https://github.com/your-org/ai-workflows
+      #     path: .ai-workflows       # destination relative to workspace root
+      #     ref: main                  # branch/tag/commit (optional)
+
     # Example project 2 - using PR URLs in comments instead of git field
     - project_keys:
         - "PROJ3"

@@ -400,7 +400,160 @@ func TestWriteFeedbackTask_NoComments(t *testing.T) {
 	assertNotContains(t, content, "## Previously Addressed")
 }
 
+// --- WriteNewTicketTask with instructions.md ---
+
+func TestWriteNewTicketTask_WithInstructionsMd(t *testing.T) {
+	dir := t.TempDir()
+	writer := taskfile.NewMarkdownWriter()
+
+	writeInstructions(t, dir, `## Workflow
+Follow the bugfix workflow at .ai-workflows/bugfix/skills/controller.md.
+
+## Validation
+After making changes, run:
+- `+"`make build`"+`
+- `+"`make test`"+`
+- `+"`make lint`")
+
+	workItem := models.WorkItem{
+		Key:         "PROJ-500",
+		Summary:     "Fix something",
+		Description: "Details here.",
+	}
+
+	if err := writer.WriteNewTicketTask(workItem, dir); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := readTaskFile(t, dir)
+
+	assertContains(t, content, "## Project Instructions")
+	assertContains(t, content, "Follow the bugfix workflow")
+	assertContains(t, content, "`make build`")
+	assertContains(t, content, "`make lint`")
+	// Standard instructions should still be present.
+	assertContains(t, content, "## Instructions")
+	assertContains(t, content, "Do not push to git")
+}
+
+func TestWriteNewTicketTask_NoInstructionsMd(t *testing.T) {
+	dir := t.TempDir()
+	writer := taskfile.NewMarkdownWriter()
+
+	workItem := models.WorkItem{
+		Key:     "PROJ-501",
+		Summary: "No instructions file",
+	}
+
+	if err := writer.WriteNewTicketTask(workItem, dir); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := readTaskFile(t, dir)
+
+	assertNotContains(t, content, "## Project Instructions")
+	assertContains(t, content, "## Instructions")
+}
+
+func TestWriteNewTicketTask_EmptyInstructionsMd(t *testing.T) {
+	dir := t.TempDir()
+	writer := taskfile.NewMarkdownWriter()
+
+	writeInstructions(t, dir, "   \n  \n  ")
+
+	workItem := models.WorkItem{
+		Key:     "PROJ-502",
+		Summary: "Empty instructions",
+	}
+
+	if err := writer.WriteNewTicketTask(workItem, dir); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := readTaskFile(t, dir)
+	assertNotContains(t, content, "## Project Instructions")
+}
+
+func TestWriteNewTicketTask_InstructionsAfterStandardInstructions(t *testing.T) {
+	dir := t.TempDir()
+	writer := taskfile.NewMarkdownWriter()
+
+	writeInstructions(t, dir, "Custom guidance here.")
+
+	workItem := models.WorkItem{
+		Key:     "PROJ-503",
+		Summary: "Order test",
+	}
+
+	if err := writer.WriteNewTicketTask(workItem, dir); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := readTaskFile(t, dir)
+
+	idxStd := strings.Index(content, "## Instructions")
+	idxProj := strings.Index(content, "## Project Instructions")
+	if idxStd < 0 || idxProj < 0 {
+		t.Fatal("expected both instruction sections")
+	}
+	if idxProj <= idxStd {
+		t.Error("Project Instructions should appear after standard Instructions")
+	}
+}
+
+// --- WriteFeedbackTask with instructions.md ---
+
+func TestWriteFeedbackTask_WithInstructionsMd(t *testing.T) {
+	dir := t.TempDir()
+	writer := taskfile.NewMarkdownWriter()
+
+	writeInstructions(t, dir, "Run `make test` after changes.")
+
+	pr := models.PRDetails{Number: 10, Title: "PR", Branch: "b"}
+	comments := []models.PRComment{
+		{Author: models.Author{Username: "r1"}, Body: "Fix this"},
+	}
+
+	if err := writer.WriteFeedbackTask(pr, comments, nil, dir); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := readTaskFile(t, dir)
+
+	assertContains(t, content, "## Project Instructions")
+	assertContains(t, content, "Run `make test` after changes.")
+	assertContains(t, content, "## Instructions")
+}
+
+func TestWriteFeedbackTask_NoInstructionsMd(t *testing.T) {
+	dir := t.TempDir()
+	writer := taskfile.NewMarkdownWriter()
+
+	pr := models.PRDetails{Number: 10, Title: "PR", Branch: "b"}
+	comments := []models.PRComment{
+		{Author: models.Author{Username: "r1"}, Body: "Fix this"},
+	}
+
+	if err := writer.WriteFeedbackTask(pr, comments, nil, dir); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := readTaskFile(t, dir)
+	assertNotContains(t, content, "## Project Instructions")
+}
+
 // --- helpers ---
+
+func writeInstructions(t *testing.T, dir, content string) {
+	t.Helper()
+	instrDir := filepath.Join(dir, ".ai-bot")
+	if err := os.MkdirAll(instrDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(instrDir, "instructions.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func readTaskFile(t *testing.T, dir string) string {
 	t.Helper()

@@ -15,9 +15,9 @@ The application uses consumer-defined interfaces and clear package boundaries:
 - **`tracker/`** — `IssueTracker` interface for work item operations; `jira/` sub-package adapts `services.JiraService` to this interface
 - **`workspace/`** — `Manager` interface for ticket-scoped workspace lifecycle (clone, cleanup, TTL); `FSManager` implementation
 - **`container/`** — `Manager` interface for container lifecycle; `Runner` (CLI executor), `Resolver` (image/config resolution), `RuntimeManager` (orchestration)
-- **`taskfile/`** — `Writer` interface for generating AI task files; `MarkdownWriter` implementation
-- **`repoconfig/`** — Parses `.ai-bot/config.yaml` from target repositories for per-repo AI/container settings
-- **`projectresolver/`** — `Resolver` interface mapping ticket keys to project settings (component-to-repo, status transitions)
+- **`taskfile/`** — `Writer` interface for generating AI task files; `MarkdownWriter` implementation; appends `.ai-bot/instructions.md` when present
+- **`repoconfig/`** — Parses `.ai-bot/config.yaml` from target repositories for per-repo AI/container settings and repo imports
+- **`projectresolver/`** — `Resolver` interface mapping ticket keys to project settings (component-to-repo, status transitions, imports)
 - **`executor/`** — `Pipeline` implementing new-ticket and PR-feedback execution flows
 - **`jobmanager/`** — `Coordinator` with concurrency control, retry tracking, and circuit breaker
 - **`scanner/`** — `WorkItemScanner` (new tickets) and `FeedbackScanner` (PR review comments); stateless, event-driven
@@ -50,6 +50,7 @@ Key configuration features:
 - `GetProjectConfigForTicket()` retrieves the appropriate project config based on ticket key
 - `StatusTransitions` maps ticket types to their workflow statuses (todo, in_progress, in_review)
 - `ComponentToRepo` maps Jira components to GitHub repository URLs (case-insensitive; viper lowercases YAML map keys)
+- `Imports` (project-level) declares auxiliary repos to clone into the workspace; merged with repo-level imports from `.ai-bot/config.yaml`
 
 ### Workflow
 
@@ -58,8 +59,9 @@ Key configuration features:
 3. **Execution Pipeline** (`executor.Pipeline`):
    - Resolves project config and maps ticket component to target repository
    - Creates/reuses a workspace (clone + branch)
-   - Resolves container image from repo-level config (`.ai-bot/config.yaml`, `.devcontainer/`) or global default
-   - Generates a task file describing the work
+   - Loads repo config (`.ai-bot/config.yaml`) and clones any declared imports into the workspace
+   - Generates a task file describing the work (appends `.ai-bot/instructions.md` if present)
+   - Resolves container image from repo-level config (`.ai-bot/container.json`, `.devcontainer/`) or global default
    - Runs the AI provider inside a container with the workspace mounted
    - Commits changes, pushes, and creates a PR
    - Transitions the ticket through configured statuses and posts PR link
@@ -267,7 +269,7 @@ See `models/config.go` LoadConfig() for complete environment variable binding.
 - `recovery/`: Crash recovery and startup cleanup
 - `costtracker/`: Daily AI cost tracking
 - `projectresolver/`: Ticket-to-project-config mapping
-- `taskfile/`: AI task file generation
-- `repoconfig/`: Per-repo `.ai-bot/config.yaml` parsing
+- `taskfile/`: AI task file generation (appends `.ai-bot/instructions.md` when present)
+- `repoconfig/`: Per-repo `.ai-bot/config.yaml` parsing (PR, AI, imports)
 - `config.example.yaml`: Complete configuration reference with comments
 - `docs/`: Architecture, debugging, setup guides, and [repo-level configuration](docs/repo-configuration.md)

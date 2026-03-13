@@ -55,6 +55,11 @@ func (r *ConfigResolver) ResolveProject(workItem models.WorkItem) (*models.Proje
 
 	transitions := pc.StatusTransitions.GetStatusTransitions(workItem.Type)
 
+	imports := pc.Imports
+	if imports == nil {
+		imports = []models.ImportConfig{}
+	}
+
 	return &models.ProjectSettings{
 		Owner:                owner,
 		Repo:                 repo,
@@ -67,6 +72,7 @@ func (r *ConfigResolver) ResolveProject(workItem models.WorkItem) (*models.Proje
 		DisableErrorComments: pc.DisableErrorComments,
 		AIProvider:           r.config.AIProvider,
 		Container:            pc.Container,
+		Imports:              imports,
 	}, nil
 }
 

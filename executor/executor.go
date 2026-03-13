@@ -141,6 +141,12 @@ type GitService interface {
 	// ReplyToComment posts a reply to a specific PR comment.
 	ReplyToComment(owner, repo string, prNumber int,
 		commentID int64, body string) error
+
+	// CloneImport clones an auxiliary repository into destDir. If ref
+	// is non-empty, that branch/tag/commit is checked out after
+	// cloning. Used to make shared resources (workflow skills,
+	// scripts) available in the workspace before AI execution.
+	CloneImport(url, destDir, ref string) error
 }
 
 // ProjectResolver maps work items to their project-specific settings.

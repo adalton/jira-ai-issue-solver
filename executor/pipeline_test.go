@@ -18,6 +18,7 @@ import (
 	"jira-ai-issue-solver/executor/executortest"
 	"jira-ai-issue-solver/jobmanager"
 	"jira-ai-issue-solver/models"
+	"jira-ai-issue-solver/repoconfig"
 	"jira-ai-issue-solver/services"
 	"jira-ai-issue-solver/taskfile/taskfiletest"
 	"jira-ai-issue-solver/tracker/trackertest"
@@ -1127,6 +1128,397 @@ func TestExecuteNewTicket_EmptyContainerSettingsNoOverride(t *testing.T) {
 }
 
 // --- helpers ---
+
+// --- mergeImports ---
+
+func TestMergeImports_ProjectOnly(t *testing.T) {
+	settings := &models.ProjectSettings{
+		Imports: []models.ImportConfig{
+			{Repo: "https://github.com/org/workflows", Path: ".workflows", Ref: "main"},
+		},
+	}
+	repoCfg := repoconfig.Default()
+
+	result := executor.MergeImports(settings, repoCfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+	if result[0].Repo != "https://github.com/org/workflows" {
+		t.Errorf("Repo = %q, want %q", result[0].Repo, "https://github.com/org/workflows")
+	}
+	if result[0].Path != ".workflows" {
+		t.Errorf("Path = %q, want %q", result[0].Path, ".workflows")
+	}
+}
+
+func TestMergeImports_RepoOnly(t *testing.T) {
+	settings := &models.ProjectSettings{}
+	repoCfg := &repoconfig.Config{
+		ValidationCommands: []string{},
+		Imports: []repoconfig.Import{
+			{Repo: "https://github.com/org/tools", Path: ".tools"},
+		},
+		PR: repoconfig.PRConfig{Labels: []string{}},
+	}
+
+	result := executor.MergeImports(settings, repoCfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+	if result[0].Path != ".tools" {
+		t.Errorf("Path = %q, want %q", result[0].Path, ".tools")
+	}
+}
+
+func TestMergeImports_RepoOverridesProjectOnPathConflict(t *testing.T) {
+	settings := &models.ProjectSettings{
+		Imports: []models.ImportConfig{
+			{Repo: "https://github.com/org/workflows-v1", Path: ".workflows", Ref: "v1"},
+		},
+	}
+	repoCfg := &repoconfig.Config{
+		ValidationCommands: []string{},
+		Imports: []repoconfig.Import{
+			{Repo: "https://github.com/team/workflows-v2", Path: ".workflows", Ref: "v2"},
+		},
+		PR: repoconfig.PRConfig{Labels: []string{}},
+	}
+
+	result := executor.MergeImports(settings, repoCfg)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+	// Repo-level should win.
+	if result[0].Repo != "https://github.com/team/workflows-v2" {
+		t.Errorf("Repo = %q, want repo-level override", result[0].Repo)
+	}
+	if result[0].Ref != "v2" {
+		t.Errorf("Ref = %q, want %q", result[0].Ref, "v2")
+	}
+}
+
+func TestMergeImports_BothSourcesDifferentPaths(t *testing.T) {
+	settings := &models.ProjectSettings{
+		Imports: []models.ImportConfig{
+			{Repo: "https://github.com/org/alpha", Path: ".alpha"},
+		},
+	}
+	repoCfg := &repoconfig.Config{
+		ValidationCommands: []string{},
+		Imports: []repoconfig.Import{
+			{Repo: "https://github.com/org/beta", Path: ".beta"},
+		},
+		PR: repoconfig.PRConfig{Labels: []string{}},
+	}
+
+	result := executor.MergeImports(settings, repoCfg)
+
+	if len(result) != 2 {
+		t.Fatalf("len(result) = %d, want 2", len(result))
+	}
+	// Sorted by path.
+	if result[0].Path != ".alpha" {
+		t.Errorf("result[0].Path = %q, want .alpha", result[0].Path)
+	}
+	if result[1].Path != ".beta" {
+		t.Errorf("result[1].Path = %q, want .beta", result[1].Path)
+	}
+}
+
+func TestMergeImports_Empty(t *testing.T) {
+	settings := &models.ProjectSettings{}
+	repoCfg := repoconfig.Default()
+
+	result := executor.MergeImports(settings, repoCfg)
+
+	if len(result) != 0 {
+		t.Fatalf("len(result) = %d, want 0", len(result))
+	}
+}
+
+func TestMergeImports_PathNormalized(t *testing.T) {
+	settings := &models.ProjectSettings{
+		Imports: []models.ImportConfig{
+			{Repo: "https://github.com/org/a", Path: ".workflows/"},
+		},
+	}
+	repoCfg := &repoconfig.Config{
+		ValidationCommands: []string{},
+		Imports: []repoconfig.Import{
+			{Repo: "https://github.com/org/b", Path: ".workflows"},
+		},
+		PR: repoconfig.PRConfig{Labels: []string{}},
+	}
+
+	result := executor.MergeImports(settings, repoCfg)
+
+	// Trailing slash should be normalized, so both map to same path.
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1 (trailing slash normalized)", len(result))
+	}
+	// Repo-level wins.
+	if result[0].Repo != "https://github.com/org/b" {
+		t.Errorf("Repo = %q, want repo-level", result[0].Repo)
+	}
+}
+
+// --- Clone imports via pipeline ---
+
+func TestExecuteNewTicket_ClonesImports(t *testing.T) {
+	d := newTestDeps(t)
+
+	// Configure project-level imports.
+	d.projects.ResolveProjectFunc = func(workItem models.WorkItem) (*models.ProjectSettings, error) {
+		return &models.ProjectSettings{
+			Owner:            "org",
+			Repo:             "repo",
+			CloneURL:         "https://github.com/org/repo.git",
+			BaseBranch:       "main",
+			InProgressStatus: "In Progress",
+			InReviewStatus:   "In Review",
+			TodoStatus:       "To Do",
+			Imports: []models.ImportConfig{
+				{Repo: "https://github.com/org/workflows", Path: ".ai-workflows", Ref: "main"},
+			},
+		}, nil
+	}
+
+	var clonedURL, clonedDest, clonedRef string
+	d.git.CloneImportFunc = func(url, destDir, ref string) error {
+		clonedURL = url
+		clonedDest = destDir
+		clonedRef = ref
+		return nil
+	}
+
+	p := d.pipeline(t)
+	_, err := p.Execute(context.Background(), newTicketJob("PROJ-1"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if clonedURL != "https://github.com/org/workflows" {
+		t.Errorf("CloneImport URL = %q, want %q", clonedURL, "https://github.com/org/workflows")
+	}
+	expectedDest := filepath.Join(d.wsDir, ".ai-workflows")
+	if clonedDest != expectedDest {
+		t.Errorf("CloneImport destDir = %q, want %q", clonedDest, expectedDest)
+	}
+	if clonedRef != "main" {
+		t.Errorf("CloneImport ref = %q, want %q", clonedRef, "main")
+	}
+}
+
+func TestExecuteNewTicket_SkipsExistingImportDir(t *testing.T) {
+	d := newTestDeps(t)
+
+	// Pre-create the import directory (simulates workspace reuse).
+	importDir := filepath.Join(d.wsDir, ".ai-workflows")
+	if err := os.MkdirAll(importDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	d.projects.ResolveProjectFunc = func(workItem models.WorkItem) (*models.ProjectSettings, error) {
+		return &models.ProjectSettings{
+			Owner:            "org",
+			Repo:             "repo",
+			CloneURL:         "https://github.com/org/repo.git",
+			BaseBranch:       "main",
+			InProgressStatus: "In Progress",
+			InReviewStatus:   "In Review",
+			TodoStatus:       "To Do",
+			Imports: []models.ImportConfig{
+				{Repo: "https://github.com/org/workflows", Path: ".ai-workflows"},
+			},
+		}, nil
+	}
+
+	cloneCalled := false
+	d.git.CloneImportFunc = func(url, destDir, ref string) error {
+		cloneCalled = true
+		return nil
+	}
+
+	p := d.pipeline(t)
+	_, err := p.Execute(context.Background(), newTicketJob("PROJ-1"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cloneCalled {
+		t.Error("CloneImport should not be called when directory exists")
+	}
+}
+
+func TestExecuteNewTicket_ImportCloneFailure(t *testing.T) {
+	d := newTestDeps(t)
+
+	d.projects.ResolveProjectFunc = func(workItem models.WorkItem) (*models.ProjectSettings, error) {
+		return &models.ProjectSettings{
+			Owner:            "org",
+			Repo:             "repo",
+			CloneURL:         "https://github.com/org/repo.git",
+			BaseBranch:       "main",
+			InProgressStatus: "In Progress",
+			InReviewStatus:   "In Review",
+			TodoStatus:       "To Do",
+			Imports: []models.ImportConfig{
+				{Repo: "https://github.com/org/broken", Path: ".broken"},
+			},
+		}, nil
+	}
+
+	d.git.CloneImportFunc = func(url, destDir, ref string) error {
+		return errors.New("clone failed: repository not found")
+	}
+
+	p := d.pipeline(t)
+	_, err := p.Execute(context.Background(), newTicketJob("PROJ-1"))
+
+	if err == nil {
+		t.Fatal("expected error when import clone fails")
+	}
+	if !strings.Contains(err.Error(), "clone import") {
+		t.Errorf("error = %q, should mention clone import", err.Error())
+	}
+}
+
+func TestExecuteNewTicket_NoImports(t *testing.T) {
+	d := newTestDeps(t)
+
+	cloneCalled := false
+	d.git.CloneImportFunc = func(url, destDir, ref string) error {
+		cloneCalled = true
+		return nil
+	}
+
+	p := d.pipeline(t)
+	_, err := p.Execute(context.Background(), newTicketJob("PROJ-1"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cloneCalled {
+		t.Error("CloneImport should not be called when no imports configured")
+	}
+}
+
+// --- excludeImportPaths ---
+
+func TestExcludeImportPaths_WritesExcludeFile(t *testing.T) {
+	wsDir := t.TempDir()
+	gitInfoDir := filepath.Join(wsDir, ".git", "info")
+	if err := os.MkdirAll(gitInfoDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	imports := []executor.ImportEntry{
+		{Repo: "https://github.com/org/workflows", Path: ".ai-workflows", Ref: "main"},
+		{Repo: "https://github.com/org/tools", Path: "vendor-tools", Ref: "v1"},
+	}
+
+	if err := executor.ExcludeImportPaths(wsDir, imports); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(gitInfoDir, "exclude")) // #nosec G304 -- test reads from t.TempDir()
+	if err != nil {
+		t.Fatalf("failed to read exclude file: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "/.ai-workflows/") {
+		t.Errorf("exclude file missing .ai-workflows pattern, got: %s", content)
+	}
+	if !strings.Contains(content, "/vendor-tools/") {
+		t.Errorf("exclude file missing vendor-tools pattern, got: %s", content)
+	}
+}
+
+func TestExcludeImportPaths_SkipsDuplicates(t *testing.T) {
+	wsDir := t.TempDir()
+	gitInfoDir := filepath.Join(wsDir, ".git", "info")
+	if err := os.MkdirAll(gitInfoDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-populate exclude file with one pattern.
+	if err := os.WriteFile(
+		filepath.Join(gitInfoDir, "exclude"),
+		[]byte("/.ai-workflows/\n"),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	imports := []executor.ImportEntry{
+		{Repo: "https://github.com/org/workflows", Path: ".ai-workflows", Ref: "main"},
+		{Repo: "https://github.com/org/tools", Path: "new-tools", Ref: ""},
+	}
+
+	if err := executor.ExcludeImportPaths(wsDir, imports); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(gitInfoDir, "exclude")) // #nosec G304 -- test reads from t.TempDir()
+	if err != nil {
+		t.Fatalf("failed to read exclude file: %v", err)
+	}
+
+	content := string(data)
+	// Should appear exactly once (not duplicated).
+	if strings.Count(content, "/.ai-workflows/") != 1 {
+		t.Errorf("expected .ai-workflows once, got:\n%s", content)
+	}
+	// New pattern should be added.
+	if !strings.Contains(content, "/new-tools/") {
+		t.Errorf("exclude file missing new-tools pattern, got:\n%s", content)
+	}
+}
+
+func TestExcludeImportPaths_NoImports_NoOp(t *testing.T) {
+	wsDir := t.TempDir()
+	gitInfoDir := filepath.Join(wsDir, ".git", "info")
+	if err := os.MkdirAll(gitInfoDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := executor.ExcludeImportPaths(wsDir, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Exclude file should not be created.
+	if _, err := os.Stat(filepath.Join(gitInfoDir, "exclude")); !os.IsNotExist(err) {
+		t.Error("exclude file should not be created when there are no imports")
+	}
+}
+
+func TestExcludeImportPaths_CreatesExcludeFileIfMissing(t *testing.T) {
+	wsDir := t.TempDir()
+	gitInfoDir := filepath.Join(wsDir, ".git", "info")
+	if err := os.MkdirAll(gitInfoDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	imports := []executor.ImportEntry{
+		{Repo: "https://github.com/org/repo", Path: "imported", Ref: ""},
+	}
+
+	if err := executor.ExcludeImportPaths(wsDir, imports); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(gitInfoDir, "exclude")) // #nosec G304 -- test reads from t.TempDir()
+	if err != nil {
+		t.Fatalf("failed to read exclude file: %v", err)
+	}
+	if !strings.Contains(string(data), "/imported/") {
+		t.Errorf("exclude file missing pattern, got: %s", string(data))
+	}
+}
 
 // testDeps holds the stub dependencies used by test cases. Individual
 // tests override specific Func fields to control behavior.

@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -158,33 +162,38 @@ func (p *Pipeline) executeNewTicket(ctx context.Context, job *jobmanager.Job) (r
 		return result, err
 	}
 
-	// --- Step 6: Write task file ---
-	if err := p.taskWriter.WriteNewTicketTask(*workItem, wsPath); err != nil {
-		return result, fmt.Errorf("write task file: %w", err)
-	}
-
-	// --- Step 7: Determine AI provider ---
-	provider := p.resolveProvider(settings)
-	logger.Info("AI provider selected", zap.String("provider", provider))
-
-	// --- Step 8: Load repo config ---
+	// --- Step 6: Load repo config ---
 	repoCfg, err := repoconfig.Load(wsPath)
 	if err != nil {
 		logger.Warn("Failed to load repo config, using defaults", zap.Error(err))
 		repoCfg = repoconfig.Default()
 	}
 
-	// --- Step 9: Build AI command ---
+	// --- Step 7: Clone imports ---
+	if err := p.cloneImports(logger, wsPath, settings, repoCfg); err != nil {
+		return result, err
+	}
+
+	// --- Step 8: Write task file ---
+	if err := p.taskWriter.WriteNewTicketTask(*workItem, wsPath); err != nil {
+		return result, fmt.Errorf("write task file: %w", err)
+	}
+
+	// --- Step 9: Determine AI provider ---
+	provider := p.resolveProvider(settings)
+	logger.Info("AI provider selected", zap.String("provider", provider))
+
+	// --- Step 10: Build AI command ---
 	sp := buildScriptParams(provider, repoCfg)
 	execCommand := buildExecCommand(sp)
 
-	// --- Step 10: Resolve and start container ---
+	// --- Step 11: Resolve and start container ---
 	ctr, err = p.startContainer(ctx, logger, wsPath, job.TicketKey, provider, settings)
 	if err != nil {
 		return result, fmt.Errorf("start container: %w", err)
 	}
 
-	// --- Step 10a: Strip remote auth before AI execution ---
+	// --- Step 11a: Strip remote auth before AI execution ---
 	// Prevent the AI from pushing directly to the remote.
 	if err := p.git.StripRemoteAuth(wsPath); err != nil {
 		return result, fmt.Errorf("strip remote auth: %w", err)
@@ -198,7 +207,7 @@ func (p *Pipeline) executeNewTicket(ctx context.Context, job *jobmanager.Job) (r
 		}
 	}()
 
-	// --- Step 11: Execute AI agent ---
+	// --- Step 12: Execute AI agent ---
 	execCtx := ctx
 	if p.cfg.SessionTimeout > 0 {
 		var cancel context.CancelFunc
@@ -226,7 +235,7 @@ func (p *Pipeline) executeNewTicket(ctx context.Context, job *jobmanager.Job) (r
 		zap.String("summary", session.Summary))
 	result.CostUSD = session.CostUSD
 
-	// --- Step 11a: Restore remote auth ---
+	// --- Step 12a: Restore remote auth ---
 	// Must happen before SyncWithRemote which needs fetch access.
 	if err := p.git.RestoreRemoteAuth(wsPath, settings.Owner, settings.Repo); err != nil {
 		return result, fmt.Errorf("restore remote auth: %w", err)
@@ -241,7 +250,7 @@ func (p *Pipeline) executeNewTicket(ctx context.Context, job *jobmanager.Job) (r
 		return result, fmt.Errorf("AI session failed: %w", execErr)
 	}
 
-	// --- Step 12: Check for changes ---
+	// --- Step 13: Check for changes ---
 	hasChanges, err := p.git.HasChanges(wsPath)
 	if err != nil {
 		return result, fmt.Errorf("check changes: %w", err)
@@ -250,7 +259,7 @@ func (p *Pipeline) executeNewTicket(ctx context.Context, job *jobmanager.Job) (r
 		return result, fmt.Errorf("AI produced no changes (exit code: %d)", exitCode)
 	}
 
-	// --- Step 13: Commit via GitHub API ---
+	// --- Step 14: Commit via GitHub API ---
 	commitMsg := fmt.Sprintf("%s: %s", job.TicketKey, workItem.Summary)
 	_, err = p.git.CommitChanges(
 		settings.Owner, settings.Repo, branchName,
@@ -263,12 +272,12 @@ func (p *Pipeline) executeNewTicket(ctx context.Context, job *jobmanager.Job) (r
 		return result, fmt.Errorf("commit changes: %w", err)
 	}
 
-	// --- Step 14: Post-commit sync ---
+	// --- Step 15: Post-commit sync ---
 	if err := p.git.SyncWithRemote(wsPath, branchName); err != nil {
 		return result, fmt.Errorf("sync with remote: %w", err)
 	}
 
-	// --- Step 15: Create PR ---
+	// --- Step 16: Create PR ---
 	draft := shouldCreateDraft(session, exitCode, repoCfg.PR.Draft)
 	if draft {
 		logger.Info("Creating draft PR",
@@ -302,7 +311,7 @@ func (p *Pipeline) executeNewTicket(ctx context.Context, job *jobmanager.Job) (r
 		zap.Int("number", pr.Number),
 		zap.Bool("draft", draft))
 
-	// --- Step 16: Update ticket ---
+	// --- Step 17: Update ticket ---
 	p.setPRURL(logger, job.TicketKey, settings, pr.URL)
 
 	if !draft {
@@ -372,6 +381,138 @@ func toSettingsOverride(settings *models.ProjectSettings) *container.SettingsOve
 		Tmpfs:       cs.Tmpfs,
 		ExtraMounts: mounts,
 	}
+}
+
+// cloneImports merges project-level and repo-level imports (repo-level
+// wins on path conflicts) and clones each into the workspace. Existing
+// directories are skipped (workspace reuse). Cloned import paths are
+// added to .git/info/exclude so they never leak into commits.
+func (p *Pipeline) cloneImports(
+	logger *zap.Logger,
+	wsPath string,
+	settings *models.ProjectSettings,
+	repoCfg *repoconfig.Config,
+) error {
+	merged := mergeImports(settings, repoCfg)
+	if len(merged) == 0 {
+		return nil
+	}
+
+	for _, imp := range merged {
+		destDir := filepath.Join(wsPath, imp.Path)
+
+		// Skip if already cloned (workspace reuse).
+		if _, err := os.Stat(destDir); err == nil {
+			logger.Debug("Import already exists, skipping",
+				zap.String("path", imp.Path))
+			continue
+		}
+
+		logger.Info("Cloning import",
+			zap.String("repo", imp.Repo),
+			zap.String("path", imp.Path),
+			zap.String("ref", imp.Ref))
+
+		if err := p.git.CloneImport(imp.Repo, destDir, imp.Ref); err != nil {
+			return fmt.Errorf("clone import %s into %s: %w", imp.Repo, imp.Path, err)
+		}
+	}
+
+	// Exclude import paths from git tracking so they never leak into
+	// commits, even if the AI removes the nested .git directory.
+	if err := excludeImportPaths(wsPath, merged); err != nil {
+		logger.Warn("Failed to write git exclude for imports",
+			zap.Error(err))
+	}
+
+	return nil
+}
+
+// excludeImportPaths appends import paths to .git/info/exclude so git
+// ignores them. This is the explicit safety net — the nested .git
+// directory already prevents tracking, but if the AI removes it, the
+// exclude file ensures files still don't appear in git status.
+func excludeImportPaths(wsPath string, imports []importEntry) error {
+	excludePath := filepath.Join(wsPath, ".git", "info", "exclude")
+
+	// Read existing excludes to avoid duplicates.
+	existing := make(map[string]bool)
+	// #nosec G304 - path is constructed from workspace root, not user input
+	if data, err := os.ReadFile(excludePath); err == nil {
+		for line := range strings.SplitSeq(string(data), "\n") {
+			existing[line] = true
+		}
+	}
+
+	var toAdd []string
+	for _, imp := range imports {
+		// Use trailing slash to match directory and all contents.
+		pattern := "/" + imp.Path + "/"
+		if !existing[pattern] {
+			toAdd = append(toAdd, pattern)
+		}
+	}
+
+	if len(toAdd) == 0 {
+		return nil
+	}
+
+	// Append to the exclude file.
+	// #nosec G304 - path is constructed from workspace root, not user input
+	f, err := os.OpenFile(excludePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", excludePath, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	for _, pattern := range toAdd {
+		if _, err := fmt.Fprintln(f, pattern); err != nil {
+			return fmt.Errorf("write exclude pattern: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// importEntry is the unified type used during import merging.
+type importEntry struct {
+	Repo string
+	Path string
+	Ref  string
+}
+
+// mergeImports combines project-level and repo-level imports. When both
+// sources declare the same destination path, the repo-level import wins
+// (teams own their environment). Paths are normalized to avoid
+// duplicates from trailing slashes.
+func mergeImports(
+	settings *models.ProjectSettings,
+	repoCfg *repoconfig.Config,
+) []importEntry {
+	byPath := make(map[string]importEntry)
+
+	// Project-level imports go in first.
+	for _, imp := range settings.Imports {
+		p := filepath.Clean(imp.Path)
+		byPath[p] = importEntry{Repo: imp.Repo, Path: p, Ref: imp.Ref}
+	}
+
+	// Repo-level imports override on path conflict.
+	for _, imp := range repoCfg.Imports {
+		p := filepath.Clean(imp.Path)
+		byPath[p] = importEntry{Repo: imp.Repo, Path: p, Ref: imp.Ref}
+	}
+
+	// Deterministic order: sort by path.
+	result := make([]importEntry, 0, len(byPath))
+	for _, e := range byPath {
+		result = append(result, e)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Path < result[j].Path
+	})
+
+	return result
 }
 
 func (p *Pipeline) resolveProvider(settings *models.ProjectSettings) string {

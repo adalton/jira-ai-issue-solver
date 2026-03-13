@@ -29,7 +29,8 @@ const configPath = ".ai-bot/config.yaml"
 //     use for validation. The AI reads these from the config file directly;
 //     they are not included in the task file.
 //   - Settings for the bot: pr and ai sections configure how the bot
-//     creates PRs and invokes AI providers.
+//     creates PRs and invokes AI providers. imports declares auxiliary
+//     repos to clone into the workspace before AI execution.
 type Config struct {
 	// ValidationCommands are shell commands the AI can use for
 	// validation (e.g., "make build", "make test"). These are hints,
@@ -37,11 +38,31 @@ type Config struct {
 	// Always non-nil; empty slice when not configured.
 	ValidationCommands []string `yaml:"validation_commands"`
 
+	// Imports declares auxiliary repositories to clone into the
+	// workspace before AI execution. For example, a shared AI
+	// workflow repo that provides skills, guidelines, or scripts.
+	// Always non-nil; empty slice when not configured.
+	Imports []Import `yaml:"imports"`
+
 	// PR contains settings used by the bot when creating pull requests.
 	PR PRConfig `yaml:"pr"`
 
 	// AI contains provider-specific preferences.
 	AI AIConfig `yaml:"ai"`
+}
+
+// Import declares an auxiliary repository to clone into the workspace.
+type Import struct {
+	// Repo is the clone URL (e.g., "https://github.com/org/repo").
+	Repo string `yaml:"repo"`
+
+	// Path is the destination directory relative to the workspace
+	// root (e.g., ".ai-workflows"). Required.
+	Path string `yaml:"path"`
+
+	// Ref is the branch, tag, or commit to check out. Empty means
+	// the remote's default branch.
+	Ref string `yaml:"ref"`
 }
 
 // PRConfig contains settings for pull request creation.
@@ -115,6 +136,7 @@ func Default() *Config {
 func defaultConfig() *Config {
 	return &Config{
 		ValidationCommands: []string{},
+		Imports:            []Import{},
 		PR: PRConfig{
 			Labels: []string{},
 		},
@@ -125,6 +147,9 @@ func defaultConfig() *Config {
 func normalizeSlices(cfg *Config) {
 	if cfg.ValidationCommands == nil {
 		cfg.ValidationCommands = []string{}
+	}
+	if cfg.Imports == nil {
+		cfg.Imports = []Import{}
 	}
 	if cfg.PR.Labels == nil {
 		cfg.PR.Labels = []string{}

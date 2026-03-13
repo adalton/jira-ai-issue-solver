@@ -43,4 +43,10 @@ type ProjectSettings struct {
 	// overridden by repo-level config (.ai-bot/container.json).
 	// A zero-value means no per-project override is configured.
 	Container ContainerSettings
+
+	// Imports declares auxiliary repositories from the project
+	// config to clone into the workspace before AI execution.
+	// These are merged with repo-level imports from
+	// .ai-bot/config.yaml (repo-level wins on path conflicts).
+	Imports []ImportConfig
 }

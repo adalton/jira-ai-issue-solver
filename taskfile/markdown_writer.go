@@ -1,6 +1,7 @@
 package taskfile
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,6 +38,10 @@ func (w *MarkdownWriter) WriteNewTicketTask(workItem models.WorkItem, dir string
 
 	writeNewTicketInstructions(&b, workItem.HasSecurityLevel())
 
+	if err := appendInstructions(&b, dir); err != nil {
+		return err
+	}
+
 	return writeTaskFile(dir, b.String())
 }
 
@@ -65,6 +70,10 @@ func (w *MarkdownWriter) WriteFeedbackTask(
 
 	writeFeedbackInstructions(&b)
 
+	if err := appendInstructions(&b, dir); err != nil {
+		return err
+	}
+
 	return writeTaskFile(dir, b.String())
 }
 
@@ -89,6 +98,33 @@ func writeFeedbackInstructions(b *strings.Builder) {
 	b.WriteString("## Instructions\n")
 	b.WriteString("Address each review comment listed above. Validate your changes compile\n")
 	b.WriteString("and pass tests. Do not push to git -- the system handles that.\n")
+}
+
+// appendInstructions reads .ai-bot/instructions.md from the workspace
+// and appends its content as a "Project Instructions" section. If the
+// file does not exist, nothing is appended. Returns an error only if
+// the file exists but cannot be read.
+func appendInstructions(b *strings.Builder, dir string) error {
+	path := filepath.Join(dir, InstructionsPath)
+
+	data, err := os.ReadFile(path) // #nosec G304 -- path is dir + constant
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read instructions file: %w", err)
+	}
+
+	content := strings.TrimSpace(string(data))
+	if content == "" {
+		return nil
+	}
+
+	b.WriteString("\n## Project Instructions\n")
+	b.WriteString(content)
+	b.WriteString("\n")
+
+	return nil
 }
 
 // writeBlockquote writes content as a markdown blockquote with a label.
