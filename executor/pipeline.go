@@ -568,6 +568,9 @@ func (p *Pipeline) runImportInstalls(
 				"install command for import %s exited with code %d: %s",
 				imp.Path, exitCode, output)
 		}
+
+		logger.Info("Import install completed",
+			zap.String("path", imp.Path))
 	}
 	return nil
 }
