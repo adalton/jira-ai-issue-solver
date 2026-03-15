@@ -21,11 +21,6 @@ func MergeImports(
 // ImportEntry is the exported version of importEntry for tests.
 type ImportEntry = importEntry
 
-// ExcludeImportPaths exposes excludeImportPaths for testing.
-func ExcludeImportPaths(wsPath string, imports []ImportEntry) error {
-	return excludeImportPaths(wsPath, imports)
-}
-
 // RunImportInstalls exposes runImportInstalls for testing.
 func (p *Pipeline) RunImportInstalls(
 	ctx context.Context,
@@ -44,9 +39,4 @@ func ReadPRDescription(dir string) *PRDescription {
 // BuildPRContent exposes buildPRContent for testing.
 func BuildPRContent(workItem *models.WorkItem, ticketKey, titlePrefix string, aiPR *PRDescription) (string, string) {
 	return buildPRContent(workItem, ticketKey, titlePrefix, aiPR)
-}
-
-// ExcludeBotFiles exposes excludeBotFiles for testing.
-func ExcludeBotFiles(wsPath string) {
-	excludeBotFiles(wsPath)
 }

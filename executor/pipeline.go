@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"go.uber.org/zap"
 
@@ -155,10 +154,6 @@ func (p *Pipeline) executeNewTicket(ctx context.Context, job *jobmanager.Job) (r
 	logger.Info("Workspace ready",
 		zap.String("path", wsPath),
 		zap.Bool("reused", reused))
-
-	// Exclude bot-generated files from git tracking so they never
-	// leak into commits (task.md, session-output.json, pr.md, etc.).
-	excludeBotFiles(wsPath)
 
 	// --- Step 5: Create or switch to branch ---
 	branchName := fmt.Sprintf("%s/%s", p.cfg.BotUsername, job.TicketKey)
@@ -396,8 +391,10 @@ func toSettingsOverride(settings *models.ProjectSettings) *container.SettingsOve
 
 // cloneImports merges project-level and repo-level imports (repo-level
 // wins on path conflicts) and clones each into the workspace. Existing
-// directories are skipped (workspace reuse). Cloned import paths are
-// added to .git/info/exclude so they never leak into commits.
+// directories are skipped (workspace reuse). Import directories are
+// excluded from commits at the GitHub API level (see isBotArtifact in
+// services/github.go), and the nested .git directory prevents git from
+// tracking their contents locally.
 // Returns the merged import list for use by runImportInstalls.
 func (p *Pipeline) cloneImports(
 	logger *zap.Logger,
@@ -430,110 +427,7 @@ func (p *Pipeline) cloneImports(
 		}
 	}
 
-	// Exclude import paths from git tracking so they never leak into
-	// commits, even if the AI removes the nested .git directory.
-	if err := excludeImportPaths(wsPath, merged); err != nil {
-		logger.Warn("Failed to write git exclude for imports",
-			zap.Error(err))
-	}
-
 	return merged, nil
-}
-
-// excludeImportPaths appends import paths to .git/info/exclude so git
-// ignores them. This is the explicit safety net — the nested .git
-// directory already prevents tracking, but if the AI removes it, the
-// exclude file ensures files still don't appear in git status.
-func excludeImportPaths(wsPath string, imports []importEntry) error {
-	excludePath := filepath.Join(wsPath, ".git", "info", "exclude")
-
-	// Read existing excludes to avoid duplicates.
-	existing := make(map[string]bool)
-	// #nosec G304 - path is constructed from workspace root, not user input
-	if data, err := os.ReadFile(excludePath); err == nil {
-		for line := range strings.SplitSeq(string(data), "\n") {
-			existing[line] = true
-		}
-	}
-
-	var toAdd []string
-	for _, imp := range imports {
-		// Use trailing slash to match directory and all contents.
-		pattern := "/" + imp.Path + "/"
-		if !existing[pattern] {
-			toAdd = append(toAdd, pattern)
-		}
-	}
-
-	if len(toAdd) == 0 {
-		return nil
-	}
-
-	// Append to the exclude file.
-	// #nosec G304 - path is constructed from workspace root, not user input
-	f, err := os.OpenFile(excludePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("open %s: %w", excludePath, err)
-	}
-	defer func() { _ = f.Close() }()
-
-	for _, pattern := range toAdd {
-		if _, err := fmt.Fprintln(f, pattern); err != nil {
-			return fmt.Errorf("write exclude pattern: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// botExcludePatterns lists .ai-bot/ files generated at runtime that
-// should never be committed. Team-authored files like instructions.md
-// and config.yaml are NOT excluded.
-var botExcludePatterns = []string{
-	"/.ai-bot/task.md",
-	"/.ai-bot/session-output.json",
-	"/.ai-bot/pr.md",
-	"/.ai-bot/diagnosis.md",
-}
-
-// excludeBotFiles ensures bot-generated files in .ai-bot/ are excluded
-// from git tracking. Uses .git/info/exclude so the patterns don't
-// require a .gitignore entry in the target repo. Errors are silently
-// ignored — this is a best-effort safety net.
-func excludeBotFiles(wsPath string) {
-	excludePath := filepath.Join(wsPath, ".git", "info", "exclude")
-
-	existing := make(map[string]bool)
-	// #nosec G304 - path is constructed from workspace root, not user input
-	if data, err := os.ReadFile(excludePath); err == nil {
-		for line := range strings.SplitSeq(string(data), "\n") {
-			existing[line] = true
-		}
-	}
-
-	var toAdd []string
-	for _, pattern := range botExcludePatterns {
-		if !existing[pattern] {
-			toAdd = append(toAdd, pattern)
-		}
-	}
-
-	if len(toAdd) == 0 {
-		return
-	}
-
-	// #nosec G304 - path is constructed from workspace root, not user input
-	f, err := os.OpenFile(excludePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return
-	}
-	defer func() { _ = f.Close() }()
-
-	for _, pattern := range toAdd {
-		if _, err := fmt.Fprintln(f, pattern); err != nil {
-			return
-		}
-	}
 }
 
 // runImportInstalls executes install commands for imports that declare

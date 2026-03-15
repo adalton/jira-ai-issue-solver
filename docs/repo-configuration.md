@@ -25,9 +25,10 @@ The AI agent may also write files to `.ai-bot/` at runtime:
 |------|---------|
 | `.ai-bot/pr.md` | AI-generated PR title (first line) and description (remaining lines); used instead of Jira-derived content |
 | `.ai-bot/task.md` | Task file written by the bot (read by the AI) |
+| `.ai-bot/diagnosis.md` | AI-generated root cause analysis (intermediate artifact, referenced when writing PR description) |
 | `.ai-bot/session-output.json` | Session metadata written by the wrapper script |
 
-These runtime files are automatically excluded from commits via `.git/info/exclude`.
+These runtime files are automatically excluded from commits at the GitHub API level — the bot's commit logic filters out all `.ai-bot/` transient files before creating tree entries.
 
 These files live in the **target repository** (the repo the bot clones and
 works on), not in the bot's own repository.
@@ -238,7 +239,7 @@ Each phase is defined in the corresponding skill file.
    questions — make reasonable assumptions where needed.
 
 2. Read and execute .ai-workflows/bugfix/skills/diagnose.md
-   Include your root cause analysis in .ai-bot/pr.md.
+   Write your root cause analysis to .ai-bot/diagnosis.md.
 
 3. Read and execute .ai-workflows/bugfix/skills/fix.md
    Implement the minimal fix. Do not run tests yet.
@@ -253,7 +254,7 @@ Each phase is defined in the corresponding skill file.
 
 6. Write a PR title and description to .ai-bot/pr.md.
    First line is the title. Remaining lines are the body.
-   Include a Root Cause section summarizing your diagnosis.
+   Include a Root Cause section from .ai-bot/diagnosis.md.
 ```
 
 **Key characteristics:**
@@ -436,7 +437,7 @@ Each phase is defined in the corresponding skill file.
    questions — make reasonable assumptions where needed.
 
 2. Read and execute .ai-workflows/bugfix/skills/diagnose.md
-   Include your root cause analysis in .ai-bot/pr.md.
+   Write your root cause analysis to .ai-bot/diagnosis.md.
 
 3. Read and execute .ai-workflows/bugfix/skills/fix.md
    Implement the minimal fix. Do not run tests yet.
@@ -451,7 +452,7 @@ Each phase is defined in the corresponding skill file.
 
 6. Write a PR title and description to .ai-bot/pr.md.
    First line is the title. Remaining lines are the body.
-   Include a Root Cause section summarizing your diagnosis.
+   Include a Root Cause section from .ai-bot/diagnosis.md.
 ```
 
 ### What the AI sees

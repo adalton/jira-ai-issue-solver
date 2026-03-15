@@ -117,7 +117,7 @@ jira:
       #      questions — make reasonable assumptions where needed.
       #
       #   2. Read and execute .ai-workflows/bugfix/skills/diagnose.md
-      #      Include your root cause analysis in .ai-bot/pr.md.
+      #      Write your root cause analysis to .ai-bot/diagnosis.md.
       #
       #   3. Read and execute .ai-workflows/bugfix/skills/fix.md
       #      Implement the minimal fix. Do not run tests yet.
@@ -132,7 +132,7 @@ jira:
       #
       #   6. Write a PR title and description to .ai-bot/pr.md.
       #      First line is the title. Remaining lines are the body.
-      #      Include a Root Cause section summarizing your diagnosis.
+      #      Include a Root Cause section from .ai-bot/diagnosis.md.
 
     # Example project 2 - using PR URLs in comments instead of git field
     - project_keys:
