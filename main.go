@@ -122,13 +122,14 @@ func main() {
 
 	pipeline, err := executor.NewPipeline(
 		executor.Config{
-			BotUsername:       config.GitHub.BotUsername,
-			DefaultProvider:   config.AIProvider,
-			AIAPIKeys:         aiAPIKeys,
-			SessionTimeout:    time.Duration(config.Guardrails.MaxContainerRuntimeMinutes) * time.Minute,
-			IgnoredUsernames:  config.GitHub.IgnoredUsernames,
-			KnownBotUsernames: config.GitHub.KnownBotUsernames,
-			MaxThreadDepth:    config.GitHub.MaxThreadDepth,
+			BotUsername:        config.GitHub.BotUsername,
+			DefaultProvider:    config.AIProvider,
+			AIAPIKeys:          aiAPIKeys,
+			SessionTimeout:     time.Duration(config.Guardrails.MaxContainerRuntimeMinutes) * time.Minute,
+			IgnoredUsernames:   config.GitHub.IgnoredUsernames,
+			KnownBotUsernames:  config.GitHub.KnownBotUsernames,
+			MaxThreadDepth:     config.GitHub.MaxThreadDepth,
+			DefaultGeminiModel: config.Gemini.Model,
 		},
 		issueTracker,
 		gitService,

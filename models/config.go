@@ -355,9 +355,10 @@ type Config struct {
 		APIKey string `yaml:"api_key" mapstructure:"api_key"`
 	} `yaml:"claude" mapstructure:"claude"`
 
-	// Gemini configuration — only the API key is needed at the bot level.
+	// Gemini configuration.
 	Gemini struct {
 		APIKey string `yaml:"api_key" mapstructure:"api_key"`
+		Model  string `yaml:"model" mapstructure:"model"`
 	} `yaml:"gemini" mapstructure:"gemini"`
 
 	// Workspaces configuration for ticket-scoped workspace lifecycle
@@ -589,6 +590,7 @@ func LoadConfig(configPath string) (*Config, error) {
 	// AI API key configuration
 	bindEnv("claude.api_key")
 	bindEnv("gemini.api_key")
+	bindEnv("gemini.model")
 
 	// Server configuration
 	bindEnv("server.port")

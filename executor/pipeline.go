@@ -184,7 +184,7 @@ func (p *Pipeline) executeNewTicket(ctx context.Context, job *jobmanager.Job) (r
 	logger.Info("AI provider selected", zap.String("provider", provider))
 
 	// --- Step 10: Build AI command ---
-	sp := buildScriptParams(provider, repoCfg)
+	sp := buildScriptParams(provider, p.cfg.DefaultGeminiModel, repoCfg)
 	execCommand := buildExecCommand(sp)
 
 	// --- Step 11: Resolve and start container ---
@@ -639,16 +639,24 @@ func buildPRContent(workItem *models.WorkItem, ticketKey, titlePrefix string, ai
 }
 
 // buildScriptParams extracts provider-specific script configuration
-// from the repo config.
-func buildScriptParams(provider string, repoCfg *repoconfig.Config) scriptParams {
+// from the repo config, falling back to the pipeline's default model.
+func buildScriptParams(provider, defaultGeminiModel string, repoCfg *repoconfig.Config) scriptParams {
 	params := scriptParams{Provider: provider}
+
+	// Apply bot-level default first.
+	if provider == "gemini" {
+		params.Model = defaultGeminiModel
+	}
+
 	if repoCfg == nil {
 		return params
 	}
+
+	// Repo-level overrides.
 	if repoCfg.AI.Claude != nil {
 		params.AllowedTools = repoCfg.AI.Claude.AllowedTools
 	}
-	if repoCfg.AI.Gemini != nil {
+	if repoCfg.AI.Gemini != nil && repoCfg.AI.Gemini.Model != "" {
 		params.Model = repoCfg.AI.Gemini.Model
 	}
 	return params

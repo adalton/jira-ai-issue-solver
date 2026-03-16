@@ -190,4 +190,8 @@ type Config struct {
 	// a comment thread's ancestry before further comments in that
 	// thread are excluded. Zero or negative disables the limit.
 	MaxThreadDepth int
+
+	// DefaultGeminiModel is the Gemini model to use when the
+	// repo-level config doesn't specify one (e.g., "gemini-2.5-pro").
+	DefaultGeminiModel string
 }

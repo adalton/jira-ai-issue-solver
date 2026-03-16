@@ -117,7 +117,7 @@ func (p *Pipeline) executeFeedback(ctx context.Context, job *jobmanager.Job) (re
 	logger.Info("AI provider selected", zap.String("provider", provider))
 
 	// --- Step 11: Build AI command ---
-	sp := buildScriptParams(provider, repoCfg)
+	sp := buildScriptParams(provider, p.cfg.DefaultGeminiModel, repoCfg)
 	execCommand := buildExecCommand(sp)
 
 	// --- Step 12: Resolve and start container ---

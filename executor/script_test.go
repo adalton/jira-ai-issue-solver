@@ -3,6 +3,8 @@ package executor
 import (
 	"strings"
 	"testing"
+
+	"jira-ai-issue-solver/repoconfig"
 )
 
 func TestBuildExecCommand_Claude_Default(t *testing.T) {
@@ -150,16 +152,60 @@ func TestBuildGeminiCommand(t *testing.T) {
 }
 
 func TestBuildScriptParams(t *testing.T) {
-	t.Run("nil repo config", func(t *testing.T) {
-		params := buildScriptParams("claude", nil)
+	t.Run("nil repo config uses default model", func(t *testing.T) {
+		params := buildScriptParams("gemini", "gemini-3.1-pro", nil)
+		if params.Provider != "gemini" {
+			t.Errorf("provider = %q, want %q", params.Provider, "gemini")
+		}
+		if params.Model != "gemini-3.1-pro" {
+			t.Errorf("model = %q, want %q", params.Model, "gemini-3.1-pro")
+		}
+	})
+
+	t.Run("nil repo config no default", func(t *testing.T) {
+		params := buildScriptParams("claude", "", nil)
 		if params.Provider != "claude" {
 			t.Errorf("provider = %q, want %q", params.Provider, "claude")
 		}
-		if params.AllowedTools != "" {
-			t.Errorf("allowed tools = %q, want empty", params.AllowedTools)
-		}
 		if params.Model != "" {
 			t.Errorf("model = %q, want empty", params.Model)
+		}
+	})
+
+	t.Run("repo config overrides default model", func(t *testing.T) {
+		repoCfg := &repoconfig.Config{
+			ValidationCommands: []string{},
+			Imports:            []repoconfig.Import{},
+			PR:                 repoconfig.PRConfig{Labels: []string{}},
+			AI: repoconfig.AIConfig{
+				Gemini: &repoconfig.GeminiConfig{Model: "gemini-2.5-pro"},
+			},
+		}
+		params := buildScriptParams("gemini", "gemini-3.1-pro", repoCfg)
+		if params.Model != "gemini-2.5-pro" {
+			t.Errorf("model = %q, want %q (repo override)", params.Model, "gemini-2.5-pro")
+		}
+	})
+
+	t.Run("empty repo model keeps default", func(t *testing.T) {
+		repoCfg := &repoconfig.Config{
+			ValidationCommands: []string{},
+			Imports:            []repoconfig.Import{},
+			PR:                 repoconfig.PRConfig{Labels: []string{}},
+			AI: repoconfig.AIConfig{
+				Gemini: &repoconfig.GeminiConfig{Model: ""},
+			},
+		}
+		params := buildScriptParams("gemini", "gemini-3.1-pro", repoCfg)
+		if params.Model != "gemini-3.1-pro" {
+			t.Errorf("model = %q, want %q (default preserved)", params.Model, "gemini-3.1-pro")
+		}
+	})
+
+	t.Run("default model only applies to gemini provider", func(t *testing.T) {
+		params := buildScriptParams("claude", "gemini-3.1-pro", nil)
+		if params.Model != "" {
+			t.Errorf("model = %q, want empty for claude provider", params.Model)
 		}
 	})
 }

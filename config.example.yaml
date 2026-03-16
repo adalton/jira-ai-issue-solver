@@ -203,9 +203,10 @@ ai_provider: claude
 claude:
   api_key: "your-anthropic-api-key-here"  # sk-ant-api03-...
 
-# Gemini API key — passed to the container as an environment variable.
+# Gemini configuration — passed to the container as environment variables.
 gemini:
   api_key: "your-gemini-api-key-here"
+  model: "gemini-2.5-pro"  # Optional: Gemini model to use. Repo-level .ai-bot/config.yaml can override.
 
 # Workspace Configuration
 # Workspaces are ticket-scoped directories that persist across jobs.
