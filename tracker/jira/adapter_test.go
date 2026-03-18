@@ -197,10 +197,103 @@ func TestAdapter_GetWorkItem(t *testing.T) {
 			Labels:        []string{"good-for-ai", "priority-high"},
 			Assignee:      &models.Author{Name: "Jane Doe", Email: "jane@example.com", Username: "jdoe"},
 			SecurityLevel: "Internal",
+			Attachments:   []models.Attachment{},
 		}
 
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("GetWorkItem() mismatch\ngot:  %+v\nwant: %+v", got, want)
+		}
+	})
+
+	t.Run("maps attachments from ticket", func(t *testing.T) {
+		mock := &jiratest.Stub{
+			GetTicketFunc: func(key string) (*models.JiraTicketResponse, error) {
+				return &models.JiraTicketResponse{
+					Key: "PROJ-150",
+					Fields: models.JiraFields{
+						Summary:   "Bug with logs",
+						Status:    models.JiraStatus{Name: "Open"},
+						IssueType: models.JiraIssueType{Name: "Bug"},
+						Project:   models.JiraProject{Key: "PROJ"},
+						Attachment: []models.JiraAttachment{
+							{
+								ID:       "10001",
+								Filename: "crash.log",
+								MimeType: "text/plain",
+								Size:     1024,
+								Content:  "https://jira.example.com/rest/api/3/attachment/content/10001",
+							},
+							{
+								ID:       "10002",
+								Filename: "screenshot.png",
+								MimeType: "image/png",
+								Size:     204800,
+								Content:  "https://jira.example.com/rest/api/3/attachment/content/10002",
+							},
+						},
+					},
+				}, nil
+			},
+			GetTicketSecurityLevelFunc: func(string) (*models.JiraSecurity, error) {
+				return nil, nil
+			},
+		}
+
+		adapter := mustNewAdapter(t, mock)
+		got, err := adapter.GetWorkItem("PROJ-150")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if len(got.Attachments) != 2 {
+			t.Fatalf("expected 2 attachments, got %d", len(got.Attachments))
+		}
+		if got.Attachments[0].Filename != "crash.log" {
+			t.Errorf("Attachments[0].Filename = %q, want %q", got.Attachments[0].Filename, "crash.log")
+		}
+		if got.Attachments[0].MimeType != "text/plain" {
+			t.Errorf("Attachments[0].MimeType = %q, want %q", got.Attachments[0].MimeType, "text/plain")
+		}
+		if got.Attachments[0].Size != 1024 {
+			t.Errorf("Attachments[0].Size = %d, want %d", got.Attachments[0].Size, 1024)
+		}
+		if got.Attachments[0].URL != "https://jira.example.com/rest/api/3/attachment/content/10001" {
+			t.Errorf("Attachments[0].URL = %q", got.Attachments[0].URL)
+		}
+		if got.Attachments[1].Filename != "screenshot.png" {
+			t.Errorf("Attachments[1].Filename = %q, want %q", got.Attachments[1].Filename, "screenshot.png")
+		}
+	})
+
+	t.Run("returns empty attachments when ticket has none", func(t *testing.T) {
+		mock := &jiratest.Stub{
+			GetTicketFunc: func(key string) (*models.JiraTicketResponse, error) {
+				return &models.JiraTicketResponse{
+					Key: "PROJ-151",
+					Fields: models.JiraFields{
+						Summary:   "No attachments",
+						Status:    models.JiraStatus{Name: "Open"},
+						IssueType: models.JiraIssueType{Name: "Bug"},
+						Project:   models.JiraProject{Key: "PROJ"},
+					},
+				}, nil
+			},
+			GetTicketSecurityLevelFunc: func(string) (*models.JiraSecurity, error) {
+				return nil, nil
+			},
+		}
+
+		adapter := mustNewAdapter(t, mock)
+		got, err := adapter.GetWorkItem("PROJ-151")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if got.Attachments == nil {
+			t.Error("Attachments should be non-nil empty slice, got nil")
+		}
+		if len(got.Attachments) != 0 {
+			t.Errorf("expected 0 attachments, got %d", len(got.Attachments))
 		}
 	})
 
@@ -798,6 +891,50 @@ func TestAdapter_AddComment(t *testing.T) {
 		}
 		if got := err.Error(); !strings.Contains(got, "comment rejected") {
 			t.Errorf("expected error to contain %q, got %q", "comment rejected", got)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// DownloadAttachment
+// ---------------------------------------------------------------------------
+
+func TestAdapter_DownloadAttachment(t *testing.T) {
+	t.Run("returns content from JiraClient", func(t *testing.T) {
+		want := []byte("log line 1\nlog line 2\n")
+		mock := &jiratest.Stub{
+			DownloadAttachmentFunc: func(url string) ([]byte, error) {
+				if url != "https://jira.example.com/attachment/content/123" {
+					t.Errorf("unexpected URL: %s", url)
+				}
+				return want, nil
+			},
+		}
+
+		adapter := mustNewAdapter(t, mock)
+		got, err := adapter.DownloadAttachment("https://jira.example.com/attachment/content/123")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(got) != string(want) {
+			t.Errorf("content mismatch\ngot:  %q\nwant: %q", got, want)
+		}
+	})
+
+	t.Run("propagates error", func(t *testing.T) {
+		mock := &jiratest.Stub{
+			DownloadAttachmentFunc: func(string) ([]byte, error) {
+				return nil, errors.New("download failed")
+			},
+		}
+
+		adapter := mustNewAdapter(t, mock)
+		_, err := adapter.DownloadAttachment("https://jira.example.com/attachment/content/123")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if got := err.Error(); !strings.Contains(got, "download failed") {
+			t.Errorf("expected error to contain %q, got %q", "download failed", got)
 		}
 	})
 }

@@ -39,6 +39,25 @@ type WorkItem struct {
 	// SecurityLevel is the security level name, or empty if none is set.
 	// A level named "None" (case-insensitive) is treated as no security level.
 	SecurityLevel string
+
+	// Attachments lists files attached to the work item.
+	// Always non-nil; empty slice when no attachments are present.
+	Attachments []Attachment
+}
+
+// Attachment represents a file attached to a work item.
+type Attachment struct {
+	// Filename is the original name of the file.
+	Filename string
+
+	// MimeType is the MIME type (e.g., "text/plain", "image/png").
+	MimeType string
+
+	// Size is the file size in bytes.
+	Size int64
+
+	// URL is the tracker-specific download URL.
+	URL string
 }
 
 // HasSecurityLevel reports whether this work item has a security level set.

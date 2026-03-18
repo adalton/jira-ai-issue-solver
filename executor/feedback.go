@@ -106,8 +106,12 @@ func (p *Pipeline) executeFeedback(ctx context.Context, job *jobmanager.Job) (re
 		return result, err
 	}
 
-	// --- Step 9: Write issue and feedback task files ---
-	if err := p.taskWriter.WriteIssue(*workItem, wsPath); err != nil {
+	// --- Step 9: Download attachments, write issue and feedback task files ---
+	downloaded, err := p.downloadAttachments(logger, *workItem, wsPath)
+	if err != nil {
+		return result, fmt.Errorf("download attachments: %w", err)
+	}
+	if err := p.taskWriter.WriteIssue(*workItem, wsPath, downloaded); err != nil {
 		return result, fmt.Errorf("write issue file: %w", err)
 	}
 	if err := p.taskWriter.WriteFeedbackTask(
@@ -215,19 +219,7 @@ func (p *Pipeline) executeFeedback(ctx context.Context, job *jobmanager.Job) (re
 	}
 
 	// --- Step 17: Reply to addressed comments ---
-	shortSHA := sha
-	if len(shortSHA) > 7 {
-		shortSHA = shortSHA[:7]
-	}
-	for _, c := range newComments {
-		replyBody := fmt.Sprintf("Addressed in %s.", shortSHA)
-		if err := p.git.ReplyToComment(
-			settings.Owner, settings.Repo, prDetails.Number, c.ID, replyBody); err != nil {
-			logger.Warn("Failed to reply to comment",
-				zap.Int64("comment_id", c.ID),
-				zap.Error(err))
-		}
-	}
+	p.replyToComments(logger, settings, prDetails, newComments, sha)
 
 	result.PRURL = prDetails.URL
 	result.PRNumber = prDetails.Number
@@ -311,6 +303,30 @@ func (p *Pipeline) handleFeedbackFailure(
 	comment := fmt.Sprintf("AI feedback processing failed: %s", jobErr.Error())
 	if err := p.tracker.AddComment(ticketKey, comment); err != nil {
 		logger.Error("Failed to post error comment", zap.Error(err))
+	}
+}
+
+// replyToComments posts a short "Addressed in <sha>" reply to each
+// comment that was processed. Failures are logged but not fatal.
+func (p *Pipeline) replyToComments(
+	logger *zap.Logger,
+	settings *models.ProjectSettings,
+	prDetails *models.PRDetails,
+	comments []models.PRComment,
+	commitSHA string,
+) {
+	shortSHA := commitSHA
+	if len(shortSHA) > 7 {
+		shortSHA = shortSHA[:7]
+	}
+	for _, c := range comments {
+		replyBody := fmt.Sprintf("Addressed in %s.", shortSHA)
+		if err := p.git.ReplyToComment(
+			settings.Owner, settings.Repo, prDetails.Number, c.ID, replyBody); err != nil {
+			logger.Warn("Failed to reply to comment",
+				zap.Int64("comment_id", c.ID),
+				zap.Error(err))
+		}
 	}
 }
 

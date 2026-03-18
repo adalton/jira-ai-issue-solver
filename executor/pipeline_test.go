@@ -1836,6 +1836,180 @@ func TestBuildPRContent_WithTitlePrefix(t *testing.T) {
 	}
 }
 
+// --- Attachment download ---
+
+func TestExecuteNewTicket_DownloadsAttachments(t *testing.T) {
+	d := newTestDeps(t)
+
+	// Return work item with attachments.
+	d.tracker.GetWorkItemFunc = func(key string) (*models.WorkItem, error) {
+		return &models.WorkItem{
+			Key:        key,
+			Summary:    "Bug with logs",
+			Type:       "Bug",
+			Components: []string{},
+			Labels:     []string{},
+			Attachments: []models.Attachment{
+				{Filename: "crash.log", MimeType: "text/plain", Size: 100, URL: "https://jira.example.com/att/1"},
+				{Filename: "config.yaml", MimeType: "text/yaml", Size: 50, URL: "https://jira.example.com/att/2"},
+			},
+		}, nil
+	}
+
+	// Track download calls.
+	var downloadedURLs []string
+	d.tracker.DownloadAttachmentFunc = func(url string) ([]byte, error) {
+		downloadedURLs = append(downloadedURLs, url)
+		if strings.Contains(url, "att/1") {
+			return []byte("stack trace here"), nil
+		}
+		return []byte("key: value"), nil
+	}
+
+	// Capture WriteIssue call to verify attachment files are passed.
+	var gotAttachments []string
+	d.taskWriter.WriteIssueFunc = func(workItem models.WorkItem, dir string, attachmentFiles []string) error {
+		gotAttachments = attachmentFiles
+		return nil
+	}
+
+	p := d.pipeline(t)
+	_, err := p.Execute(context.Background(), newTicketJob("PROJ-ATT"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify both attachments were downloaded.
+	if len(downloadedURLs) != 2 {
+		t.Fatalf("expected 2 downloads, got %d", len(downloadedURLs))
+	}
+
+	// Verify WriteIssue received the attachment filenames.
+	if len(gotAttachments) != 2 {
+		t.Fatalf("expected 2 attachment files, got %d: %v", len(gotAttachments), gotAttachments)
+	}
+	if gotAttachments[0] != "crash.log" || gotAttachments[1] != "config.yaml" {
+		t.Errorf("attachment files = %v, want [crash.log config.yaml]", gotAttachments)
+	}
+
+	// Verify files exist on disk.
+	for _, name := range []string{"crash.log", "config.yaml"} {
+		path := filepath.Join(d.wsDir, ".ai-bot", "attachments", name)
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected attachment file %s to exist: %v", name, err)
+		}
+	}
+}
+
+func TestExecuteNewTicket_SkipsLargeAttachments(t *testing.T) {
+	d := newTestDeps(t)
+
+	d.tracker.GetWorkItemFunc = func(key string) (*models.WorkItem, error) {
+		return &models.WorkItem{
+			Key:        key,
+			Summary:    "Large file",
+			Type:       "Bug",
+			Components: []string{},
+			Labels:     []string{},
+			Attachments: []models.Attachment{
+				{Filename: "small.log", MimeType: "text/plain", Size: 100, URL: "https://jira.example.com/att/1"},
+				{Filename: "huge.bin", MimeType: "application/octet-stream", Size: 10 << 20, URL: "https://jira.example.com/att/2"},
+			},
+		}, nil
+	}
+
+	var downloadedURLs []string
+	d.tracker.DownloadAttachmentFunc = func(url string) ([]byte, error) {
+		downloadedURLs = append(downloadedURLs, url)
+		return []byte("data"), nil
+	}
+
+	var gotAttachments []string
+	d.taskWriter.WriteIssueFunc = func(_ models.WorkItem, _ string, attachmentFiles []string) error {
+		gotAttachments = attachmentFiles
+		return nil
+	}
+
+	p := d.pipeline(t)
+	_, err := p.Execute(context.Background(), newTicketJob("PROJ-BIG"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only the small file should have been downloaded.
+	if len(downloadedURLs) != 1 {
+		t.Fatalf("expected 1 download, got %d", len(downloadedURLs))
+	}
+	if len(gotAttachments) != 1 || gotAttachments[0] != "small.log" {
+		t.Errorf("attachment files = %v, want [small.log]", gotAttachments)
+	}
+}
+
+func TestExecuteNewTicket_NoAttachments_NoSection(t *testing.T) {
+	d := newTestDeps(t)
+
+	var gotAttachments []string
+	d.taskWriter.WriteIssueFunc = func(_ models.WorkItem, _ string, attachmentFiles []string) error {
+		gotAttachments = attachmentFiles
+		return nil
+	}
+
+	p := d.pipeline(t)
+	_, err := p.Execute(context.Background(), newTicketJob("PROJ-NONE"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// No attachments means nil passed to WriteIssue.
+	if gotAttachments != nil {
+		t.Errorf("expected nil attachment files, got %v", gotAttachments)
+	}
+}
+
+func TestExecuteNewTicket_SanitizesAttachmentFilename(t *testing.T) {
+	d := newTestDeps(t)
+
+	d.tracker.GetWorkItemFunc = func(key string) (*models.WorkItem, error) {
+		return &models.WorkItem{
+			Key:        key,
+			Summary:    "Path traversal test",
+			Type:       "Bug",
+			Components: []string{},
+			Labels:     []string{},
+			Attachments: []models.Attachment{
+				{Filename: "../../etc/passwd", MimeType: "text/plain", Size: 50, URL: "https://jira.example.com/att/1"},
+			},
+		}, nil
+	}
+
+	d.tracker.DownloadAttachmentFunc = func(string) ([]byte, error) {
+		return []byte("safe content"), nil
+	}
+
+	var gotAttachments []string
+	d.taskWriter.WriteIssueFunc = func(_ models.WorkItem, _ string, attachmentFiles []string) error {
+		gotAttachments = attachmentFiles
+		return nil
+	}
+
+	p := d.pipeline(t)
+	_, err := p.Execute(context.Background(), newTicketJob("PROJ-SEC"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Filename should be sanitized to just "passwd".
+	if len(gotAttachments) != 1 || gotAttachments[0] != "passwd" {
+		t.Errorf("attachment files = %v, want [passwd]", gotAttachments)
+	}
+
+	// File should be in the attachments dir, not in ../../etc/.
+	path := filepath.Join(d.wsDir, ".ai-bot", "attachments", "passwd")
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("expected sanitized file at %s: %v", path, err)
+	}
+}
+
 func equalSlice(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

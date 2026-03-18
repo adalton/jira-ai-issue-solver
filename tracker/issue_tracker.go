@@ -18,8 +18,8 @@ import "jira-ai-issue-solver/models"
 // native API calls.
 //
 // The interface is intentionally small — it covers only the operations the
-// system actually needs. Operations like creating issues, managing
-// attachments, or querying changelogs are out of scope.
+// system actually needs. Operations like creating issues or querying
+// changelogs are out of scope.
 type IssueTracker interface {
 	// SearchWorkItems finds work items matching the given criteria.
 	// Returns an empty slice (not nil) when no results match.
@@ -39,4 +39,8 @@ type IssueTracker interface {
 
 	// SetFieldValue writes a string value to a named field on a work item.
 	SetFieldValue(key, field, value string) error
+
+	// DownloadAttachment fetches the raw content of an attachment by its
+	// tracker-specific download URL. Returns the file bytes.
+	DownloadAttachment(url string) ([]byte, error)
 }

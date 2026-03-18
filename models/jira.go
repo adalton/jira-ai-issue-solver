@@ -51,20 +51,30 @@ type JiraIssue struct {
 // Jira Cloud API v3 returns description and comment bodies in Atlassian
 // Document Format (ADF). The ADFText type handles extracting plain text.
 type JiraFields struct {
-	Summary     string          `json:"summary"`
-	Description ADFText         `json:"description"`
-	Status      JiraStatus      `json:"status"`
-	IssueType   JiraIssueType   `json:"issuetype"`
-	Project     JiraProject     `json:"project"`
-	Components  []JiraComponent `json:"components"`
-	Labels      []string        `json:"labels"`
-	Created     JiraTime        `json:"created"`
-	Updated     JiraTime        `json:"updated"`
-	Creator     JiraUser        `json:"creator"`
-	Reporter    JiraUser        `json:"reporter"`
-	Assignee    *JiraUser       `json:"assignee,omitempty"`
-	Comment     JiraComments    `json:"comment,omitempty"`
-	Security    *JiraSecurity   `json:"security,omitempty"`
+	Summary     string           `json:"summary"`
+	Description ADFText          `json:"description"`
+	Status      JiraStatus       `json:"status"`
+	IssueType   JiraIssueType    `json:"issuetype"`
+	Project     JiraProject      `json:"project"`
+	Components  []JiraComponent  `json:"components"`
+	Labels      []string         `json:"labels"`
+	Created     JiraTime         `json:"created"`
+	Updated     JiraTime         `json:"updated"`
+	Creator     JiraUser         `json:"creator"`
+	Reporter    JiraUser         `json:"reporter"`
+	Assignee    *JiraUser        `json:"assignee,omitempty"`
+	Comment     JiraComments     `json:"comment,omitempty"`
+	Security    *JiraSecurity    `json:"security,omitempty"`
+	Attachment  []JiraAttachment `json:"attachment,omitempty"`
+}
+
+// JiraAttachment represents a file attached to a Jira issue.
+type JiraAttachment struct {
+	ID       string `json:"id"`
+	Filename string `json:"filename"`
+	MimeType string `json:"mimeType"`
+	Size     int64  `json:"size"`
+	Content  string `json:"content"` // download URL
 }
 
 // JiraSecurity represents the security level of a Jira issue

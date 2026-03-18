@@ -29,6 +29,7 @@ type JiraClient interface {
 	AddComment(key string, comment string) error
 	UpdateTicketFieldByName(key string, fieldName string, value interface{}) error
 	GetFieldIDByName(fieldName string) (string, error)
+	DownloadAttachment(url string) ([]byte, error)
 }
 
 // Compile-time check that Adapter implements tracker.IssueTracker.
@@ -142,6 +143,14 @@ func (a *Adapter) AddComment(key, body string) error {
 		return fmt.Errorf("add comment to %s: %w", key, err)
 	}
 	return nil
+}
+
+func (a *Adapter) DownloadAttachment(url string) ([]byte, error) {
+	data, err := a.jira.DownloadAttachment(url)
+	if err != nil {
+		return nil, fmt.Errorf("download attachment: %w", err)
+	}
+	return data, nil
 }
 
 func (a *Adapter) SetFieldValue(key, field, value string) error {
@@ -263,6 +272,16 @@ func mapFieldsToWorkItem(key string, fields models.JiraFields, security *models.
 		securityLevel = security.Name
 	}
 
+	attachments := make([]models.Attachment, 0, len(fields.Attachment))
+	for _, a := range fields.Attachment {
+		attachments = append(attachments, models.Attachment{
+			Filename: a.Filename,
+			MimeType: a.MimeType,
+			Size:     a.Size,
+			URL:      a.Content,
+		})
+	}
+
 	return models.WorkItem{
 		Key:           key,
 		Summary:       fields.Summary,
@@ -274,5 +293,6 @@ func mapFieldsToWorkItem(key string, fields models.JiraFields, security *models.
 		Labels:        labels,
 		Assignee:      assignee,
 		SecurityLevel: securityLevel,
+		Attachments:   attachments,
 	}
 }

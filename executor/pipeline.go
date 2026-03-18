@@ -175,8 +175,12 @@ func (p *Pipeline) executeNewTicket(ctx context.Context, job *jobmanager.Job) (r
 		return result, err
 	}
 
-	// --- Step 8: Write issue and task files ---
-	if err := p.taskWriter.WriteIssue(*workItem, wsPath); err != nil {
+	// --- Step 8: Download attachments, write issue and task files ---
+	downloaded, err := p.downloadAttachments(logger, *workItem, wsPath)
+	if err != nil {
+		return result, fmt.Errorf("download attachments: %w", err)
+	}
+	if err := p.taskWriter.WriteIssue(*workItem, wsPath, downloaded); err != nil {
 		return result, fmt.Errorf("write issue file: %w", err)
 	}
 	if err := p.taskWriter.WriteNewTicketTask(*workItem, wsPath, settings.Instructions, settings.NewTicketWorkflow); err != nil {
@@ -508,6 +512,63 @@ func collectExcludes(imports []importEntry) []string {
 		excludes = append(excludes, imp.Excludes...)
 	}
 	return excludes
+}
+
+// maxAttachmentSize is the maximum size (in bytes) of a single Jira
+// attachment that will be downloaded. Larger files are skipped.
+const maxAttachmentSize = 1 << 20 // 1 MiB
+
+// downloadAttachments fetches qualifying Jira attachments into the
+// workspace's .ai-bot/attachments/ directory and returns the list of
+// filenames that were written. Attachments exceeding maxAttachmentSize
+// are skipped with a log message; download failures are logged and
+// skipped (non-fatal).
+func (p *Pipeline) downloadAttachments(
+	logger *zap.Logger,
+	workItem models.WorkItem,
+	wsPath string,
+) ([]string, error) {
+	if len(workItem.Attachments) == 0 {
+		return nil, nil
+	}
+
+	destDir := filepath.Join(wsPath, taskfile.AttachmentsDirPath)
+	if err := os.MkdirAll(destDir, 0o750); err != nil {
+		return nil, fmt.Errorf("create attachments dir: %w", err)
+	}
+
+	var downloaded []string
+	for _, att := range workItem.Attachments {
+		if att.Size > maxAttachmentSize {
+			logger.Info("Skipping large attachment",
+				zap.String("filename", att.Filename),
+				zap.Int64("size_bytes", att.Size),
+				zap.Int64("max_bytes", maxAttachmentSize))
+			continue
+		}
+
+		data, err := p.tracker.DownloadAttachment(att.URL)
+		if err != nil {
+			logger.Warn("Failed to download attachment",
+				zap.String("filename", att.Filename),
+				zap.Error(err))
+			continue
+		}
+
+		// Sanitize filename to prevent path traversal.
+		safeName := filepath.Base(att.Filename)
+		destPath := filepath.Join(destDir, safeName)
+		if err := os.WriteFile(destPath, data, 0o644); err != nil { // #nosec G306
+			return nil, fmt.Errorf("write attachment %s: %w", safeName, err)
+		}
+
+		downloaded = append(downloaded, safeName)
+		logger.Info("Downloaded attachment",
+			zap.String("filename", safeName),
+			zap.Int64("size_bytes", att.Size))
+	}
+
+	return downloaded, nil
 }
 
 func (p *Pipeline) resolveProvider(settings *models.ProjectSettings) string {

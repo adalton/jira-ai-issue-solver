@@ -47,6 +47,13 @@ const (
 	// after the AI session completes.
 	PRDescriptionPath = ".ai-bot/pr.md"
 
+	// AttachmentsDirPath is the path, relative to the workspace
+	// root, where downloaded Jira attachments are stored. This
+	// directory lives under .ai-bot/ so it is automatically excluded
+	// from commits. Both the new-ticket and feedback pipelines write
+	// attachments here; the issue file references them when present.
+	AttachmentsDirPath = ".ai-bot/attachments"
+
 	// NewTicketWorkflowPath is the path, relative to the workspace
 	// root, where optional workflow instructions for new tickets
 	// live. Unlike InstructionsPath (which applies to all task
@@ -62,8 +69,10 @@ type Writer interface {
 	// WriteIssue writes the Jira issue content to <dir>/.ai-bot/issue.md.
 	// This file contains the stable problem definition (key, summary,
 	// description) and is referenced by both new-ticket and feedback
-	// task files.
-	WriteIssue(workItem models.WorkItem, dir string) error
+	// task files. attachmentFiles lists filenames downloaded to
+	// .ai-bot/attachments/; if non-empty, an Attachments section is
+	// added referencing them.
+	WriteIssue(workItem models.WorkItem, dir string, attachmentFiles []string) error
 
 	// WriteNewTicketTask generates a task file for implementing a new
 	// ticket. The file is written to <dir>/.ai-bot/task.md.

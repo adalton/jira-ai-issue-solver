@@ -550,3 +550,10 @@ func (s *JiraServiceImpl) GetTicketSecurityLevel(key string) (*models.JiraSecuri
 
 	return nil, nil
 }
+
+// DownloadAttachment fetches the raw content of a Jira attachment by
+// its download URL. The URL is the "content" field returned in the
+// Jira attachment object.
+func (s *JiraServiceImpl) DownloadAttachment(url string) ([]byte, error) {
+	return s.doGet(url)
+}

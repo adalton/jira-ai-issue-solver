@@ -20,6 +20,7 @@ type Stub struct {
 	AddCommentFunc              func(key string, comment string) error
 	UpdateTicketFieldByNameFunc func(key string, fieldName string, value interface{}) error
 	GetFieldIDByNameFunc        func(fieldName string) (string, error)
+	DownloadAttachmentFunc      func(url string) ([]byte, error)
 }
 
 func (s *Stub) SearchTickets(jql string) (*models.JiraSearchResponse, error) {
@@ -69,4 +70,11 @@ func (s *Stub) GetFieldIDByName(fieldName string) (string, error) {
 		return s.GetFieldIDByNameFunc(fieldName)
 	}
 	return fieldName, nil
+}
+
+func (s *Stub) DownloadAttachment(url string) ([]byte, error) {
+	if s.DownloadAttachmentFunc != nil {
+		return s.DownloadAttachmentFunc(url)
+	}
+	return nil, nil
 }

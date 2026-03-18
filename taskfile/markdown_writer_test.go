@@ -23,7 +23,7 @@ func TestWriteIssue_BasicTicket(t *testing.T) {
 		Type:        "Bug",
 	}
 
-	if err := writer.WriteIssue(workItem, dir); err != nil {
+	if err := writer.WriteIssue(workItem, dir, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -41,7 +41,7 @@ func TestWriteIssue_EmptyDescription(t *testing.T) {
 
 	workItem := models.WorkItem{Key: "PROJ-456", Summary: "Quick fix"}
 
-	if err := writer.WriteIssue(workItem, dir); err != nil {
+	if err := writer.WriteIssue(workItem, dir, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -61,7 +61,7 @@ func TestWriteIssue_MultilineDescription(t *testing.T) {
 		Description: "Line one.\n\nLine three after blank.\nLine four.",
 	}
 
-	if err := writer.WriteIssue(workItem, dir); err != nil {
+	if err := writer.WriteIssue(workItem, dir, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -78,13 +78,64 @@ func TestWriteIssue_CreatesDirectory(t *testing.T) {
 
 	workItem := models.WorkItem{Key: "PROJ-300", Summary: "Test dir creation"}
 
-	if err := writer.WriteIssue(workItem, dir); err != nil {
+	if err := writer.WriteIssue(workItem, dir, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	if _, err := os.Stat(filepath.Join(dir, taskfile.IssueFilePath)); err != nil {
 		t.Fatalf("issue file should exist: %v", err)
 	}
+}
+
+func TestWriteIssue_WithAttachments(t *testing.T) {
+	dir := t.TempDir()
+	writer := taskfile.NewMarkdownWriter()
+
+	workItem := models.WorkItem{
+		Key:         "PROJ-400",
+		Summary:     "Crash on startup",
+		Description: "See attached log.",
+	}
+
+	attachments := []string{"crash.log", "config.yaml"}
+	if err := writer.WriteIssue(workItem, dir, attachments); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := readIssueFile(t, dir)
+
+	assertContains(t, content, "## Attachments")
+	assertContains(t, content, taskfile.AttachmentsDirPath)
+	assertContains(t, content, "- `crash.log`")
+	assertContains(t, content, "- `config.yaml`")
+}
+
+func TestWriteIssue_NoAttachments_NoSection(t *testing.T) {
+	dir := t.TempDir()
+	writer := taskfile.NewMarkdownWriter()
+
+	workItem := models.WorkItem{Key: "PROJ-401", Summary: "No attachments"}
+
+	if err := writer.WriteIssue(workItem, dir, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := readIssueFile(t, dir)
+	assertNotContains(t, content, "## Attachments")
+}
+
+func TestWriteIssue_EmptyAttachmentList_NoSection(t *testing.T) {
+	dir := t.TempDir()
+	writer := taskfile.NewMarkdownWriter()
+
+	workItem := models.WorkItem{Key: "PROJ-402", Summary: "Empty list"}
+
+	if err := writer.WriteIssue(workItem, dir, []string{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := readIssueFile(t, dir)
+	assertNotContains(t, content, "## Attachments")
 }
 
 // --- WriteNewTicketTask ---

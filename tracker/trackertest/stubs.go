@@ -13,11 +13,12 @@ var _ tracker.IssueTracker = (*Stub)(nil)
 // Set the corresponding Func field to control each method's behavior.
 // When a Func field is nil, the method returns zero values.
 type Stub struct {
-	SearchWorkItemsFunc  func(criteria models.SearchCriteria) ([]models.WorkItem, error)
-	GetWorkItemFunc      func(key string) (*models.WorkItem, error)
-	TransitionStatusFunc func(key, status string) error
-	AddCommentFunc       func(key, body string) error
-	SetFieldValueFunc    func(key, field, value string) error
+	SearchWorkItemsFunc    func(criteria models.SearchCriteria) ([]models.WorkItem, error)
+	GetWorkItemFunc        func(key string) (*models.WorkItem, error)
+	TransitionStatusFunc   func(key, status string) error
+	AddCommentFunc         func(key, body string) error
+	SetFieldValueFunc      func(key, field, value string) error
+	DownloadAttachmentFunc func(url string) ([]byte, error)
 }
 
 func (s *Stub) SearchWorkItems(criteria models.SearchCriteria) ([]models.WorkItem, error) {
@@ -53,4 +54,11 @@ func (s *Stub) SetFieldValue(key, field, value string) error {
 		return s.SetFieldValueFunc(key, field, value)
 	}
 	return nil
+}
+
+func (s *Stub) DownloadAttachment(url string) ([]byte, error) {
+	if s.DownloadAttachmentFunc != nil {
+		return s.DownloadAttachmentFunc(url)
+	}
+	return nil, nil
 }
