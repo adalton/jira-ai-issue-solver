@@ -102,12 +102,16 @@ jira:
 
           # Workflow for new tickets only. Appended ONLY to new-ticket
           # task files — feedback tasks do not receive this. Use for
-          # multi-phase workflows (assess → diagnose → fix → test → review).
+          # multi-phase workflows (diagnose → fix → test → review → document).
           # Repo-level .ai-bot/new-ticket-workflow.md takes precedence
           # when the profile field is empty.
           # new_ticket_workflow: |
-          #   Execute the following bugfix workflow phases in order.
-          #   ...
+          #   Read and execute .ai-workflows/bugfix/skills/unattended.md
+          #   with these settings:
+          #     branch: stay on the current branch (already created by the orchestration system)
+          #     lint_command: golangci-lint run --fix
+          #   All artifact paths (.artifacts/bugfix/{issue}/) should use
+          #   .ai-bot/ instead. Write the PR description to .ai-bot/pr.md.
 
           # Workflow for PR feedback only. Appended ONLY to feedback
           # task files — new-ticket tasks do not receive this. Use for
@@ -117,8 +121,8 @@ jira:
           # when the profile field is empty.
           # feedback_workflow: |
           #   Read and execute .ai-workflows/bugfix/skills/feedback.md
-          #   with these settings:
-          #     ARTIFACT_DIR: .ai-bot/
+          #   All artifact paths (.artifacts/bugfix/{issue}/) should use
+          #   .ai-bot/ instead.
           #   Review comments are already provided in the task above
           #   (use source 1: task file).
 
