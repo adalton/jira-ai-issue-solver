@@ -54,6 +54,18 @@ func truncateForError(body []byte) string {
 	return truncate(body, maxBodyErrorLength)
 }
 
+// isTextContentType returns true if the Content-Type header indicates
+// text-based content that is safe to log. Binary content (images,
+// PDFs, octet-streams) produces garbled output in logs.
+func isTextContentType(contentType string) bool {
+	ct := strings.ToLower(contentType)
+	return ct == "" ||
+		strings.HasPrefix(ct, "text/") ||
+		strings.HasPrefix(ct, "application/json") ||
+		strings.HasPrefix(ct, "application/xml") ||
+		strings.HasPrefix(ct, "application/xhtml")
+}
+
 // randomJitter generates a random jitter value between 0 and maxSeconds
 func randomJitter(maxSeconds float64) (float64, error) {
 	var randomBytes [8]byte
@@ -158,7 +170,11 @@ func (s *JiraServiceImpl) doOperation(
 			// Success case
 			if resp.StatusCode == okStatusCode {
 				s.logger.Debug("Operation successful", zap.String("operation", operation), zap.String("url", url), zap.Int("status_code", resp.StatusCode))
-				s.logger.Debug("Response body", zap.String("body", truncateForLogging(body)))
+				if isTextContentType(resp.Header.Get("Content-Type")) {
+					s.logger.Debug("Response body", zap.String("body", truncateForLogging(body)))
+				} else {
+					s.logger.Debug("Response body (binary, not logged)", zap.Int("size_bytes", len(body)))
+				}
 				return body, nil
 			}
 		}
@@ -243,9 +259,14 @@ func (s *JiraServiceImpl) doOperation(
 			continue // Retry the request
 		}
 
-		// All other error cases - truncate body to avoid huge error messages
-		return nil, fmt.Errorf("failed to %s %s: status_code=%d, body=%s",
-			operation, url, resp.StatusCode, truncateForError(body))
+		// All other error cases - truncate body to avoid huge error messages.
+		// Skip body content for binary responses (images, attachments).
+		if isTextContentType(resp.Header.Get("Content-Type")) {
+			return nil, fmt.Errorf("failed to %s %s: status_code=%d, body=%s",
+				operation, url, resp.StatusCode, truncateForError(body))
+		}
+		return nil, fmt.Errorf("failed to %s %s: status_code=%d, body=<%d bytes binary>",
+			operation, url, resp.StatusCode, len(body))
 	}
 
 	return nil, fmt.Errorf("failed to %s %s after %d retries", operation, url, maxRetries)

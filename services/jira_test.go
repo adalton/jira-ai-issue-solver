@@ -1268,3 +1268,34 @@ func TestDoOperation_UsesBasicAuth(t *testing.T) {
 		t.Errorf("Authorization header = %q, want %q", capturedAuth, want)
 	}
 }
+
+func TestIsTextContentType(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		want        bool
+	}{
+		{"empty string treated as text", "", true},
+		{"application/json", "application/json", true},
+		{"application/json with charset", "application/json; charset=utf-8", true},
+		{"text/plain", "text/plain", true},
+		{"text/html", "text/html", true},
+		{"application/xml", "application/xml", true},
+		{"application/xhtml+xml", "application/xhtml+xml", true},
+		{"image/png", "image/png", false},
+		{"image/jpeg", "image/jpeg", false},
+		{"application/pdf", "application/pdf", false},
+		{"application/octet-stream", "application/octet-stream", false},
+		{"uppercase JSON", "Application/JSON", true},
+		{"mixed case image", "Image/PNG", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isTextContentType(tt.contentType)
+			if got != tt.want {
+				t.Errorf("isTextContentType(%q) = %v, want %v", tt.contentType, got, tt.want)
+			}
+		})
+	}
+}
