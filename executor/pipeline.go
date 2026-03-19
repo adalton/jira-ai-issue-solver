@@ -539,6 +539,18 @@ func (p *Pipeline) downloadAttachments(
 
 	var downloaded []string
 	for _, att := range workItem.Attachments {
+		// Sanitize filename early to check for existing file.
+		safeName := filepath.Base(att.Filename)
+		destPath := filepath.Join(destDir, safeName)
+
+		// Skip attachments already on disk (workspace persists across sessions).
+		if _, err := os.Stat(destPath); err == nil {
+			downloaded = append(downloaded, safeName)
+			logger.Debug("Attachment already exists, skipping download",
+				zap.String("filename", safeName))
+			continue
+		}
+
 		if att.Size > maxAttachmentSize {
 			logger.Info("Skipping large attachment",
 				zap.String("filename", att.Filename),
@@ -555,9 +567,6 @@ func (p *Pipeline) downloadAttachments(
 			continue
 		}
 
-		// Sanitize filename to prevent path traversal.
-		safeName := filepath.Base(att.Filename)
-		destPath := filepath.Join(destDir, safeName)
 		if err := os.WriteFile(destPath, data, 0o644); err != nil { // #nosec G306
 			return nil, fmt.Errorf("write attachment %s: %w", safeName, err)
 		}

@@ -2010,6 +2010,68 @@ func TestExecuteNewTicket_SanitizesAttachmentFilename(t *testing.T) {
 	}
 }
 
+func TestExecuteNewTicket_SkipsExistingAttachments(t *testing.T) {
+	d := newTestDeps(t)
+
+	d.tracker.GetWorkItemFunc = func(key string) (*models.WorkItem, error) {
+		return &models.WorkItem{
+			Key:        key,
+			Summary:    "Rerun with cached attachments",
+			Type:       "Bug",
+			Components: []string{},
+			Labels:     []string{},
+			Attachments: []models.Attachment{
+				{Filename: "existing.log", MimeType: "text/plain", Size: 100, URL: "https://jira.example.com/att/1"},
+				{Filename: "new.log", MimeType: "text/plain", Size: 80, URL: "https://jira.example.com/att/2"},
+			},
+		}, nil
+	}
+
+	// Pre-create the first attachment on disk.
+	attDir := filepath.Join(d.wsDir, ".ai-bot", "attachments")
+	if err := os.MkdirAll(attDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(attDir, "existing.log"), []byte("old data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Track download calls — only new.log should be downloaded.
+	var downloadedURLs []string
+	d.tracker.DownloadAttachmentFunc = func(url string) ([]byte, error) {
+		downloadedURLs = append(downloadedURLs, url)
+		return []byte("new data"), nil
+	}
+
+	var gotAttachments []string
+	d.taskWriter.WriteIssueFunc = func(_ models.WorkItem, _ string, attachmentFiles []string) error {
+		gotAttachments = attachmentFiles
+		return nil
+	}
+
+	p := d.pipeline(t)
+	_, err := p.Execute(context.Background(), newTicketJob("PROJ-CACHE"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only the new attachment should have been downloaded.
+	if len(downloadedURLs) != 1 {
+		t.Fatalf("expected 1 download, got %d: %v", len(downloadedURLs), downloadedURLs)
+	}
+	if !strings.Contains(downloadedURLs[0], "att/2") {
+		t.Errorf("expected att/2 to be downloaded, got %s", downloadedURLs[0])
+	}
+
+	// Both attachments should be reported (existing + new).
+	if len(gotAttachments) != 2 {
+		t.Fatalf("expected 2 attachment files, got %d: %v", len(gotAttachments), gotAttachments)
+	}
+	if gotAttachments[0] != "existing.log" || gotAttachments[1] != "new.log" {
+		t.Errorf("attachment files = %v, want [existing.log new.log]", gotAttachments)
+	}
+}
+
 func equalSlice(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
