@@ -19,8 +19,6 @@ import (
 // newTestGitHubServiceForGit creates a GitHubService suitable for testing
 // git-only operations (no GitHub API calls). It generates a temporary RSA
 // key so the constructor's GitHub App transport initialization succeeds.
-// When no executor is provided, it defaults to using /usr/bin/git to
-// bypass any wrapper scripts on PATH.
 func newTestGitHubServiceForGit(t *testing.T, executor ...models.CommandExecutor) *services.GitHubServiceImpl {
 	t.Helper()
 
@@ -235,7 +233,7 @@ func assertCommand(t *testing.T, got []string, want ...string) {
 
 func gitInit(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmdArgs := append([]string{"init"}, args...)
+	cmdArgs := append([]string{"init", "-b", "main"}, args...)
 	cmd := exec.Command("/usr/bin/git", cmdArgs...)
 	cmd.Dir = dir
 	cmd.Env = gitTestEnv()
