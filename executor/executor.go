@@ -208,4 +208,10 @@ type Config struct {
 	// DefaultGeminiModel is the Gemini model to use when the
 	// repo-level config doesn't specify one (e.g., "gemini-2.5-pro").
 	DefaultGeminiModel string
+
+	// MaxRetries is the maximum retry count from the job manager.
+	// Used by the feedback pipeline to post an honest "unable to
+	// address" reply on the final attempt instead of failing
+	// silently and looping.
+	MaxRetries int
 }

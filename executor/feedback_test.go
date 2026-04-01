@@ -1042,7 +1042,12 @@ func TestExecuteFeedback_ErrNoChanges_ReturnsError(t *testing.T) {
 		return "", services.ErrNoChanges
 	}
 
-	p := d.pipeline(t)
+	p := d.pipelineWithConfig(t, executor.Config{
+		BotUsername:     "ai-bot",
+		DefaultProvider: "claude",
+		AIAPIKeys:       map[string]string{"claude": "test-key"},
+		MaxRetries:      3,
+	})
 	_, err := p.Execute(context.Background(), newFeedbackJob("PROJ-1"))
 
 	if err == nil {

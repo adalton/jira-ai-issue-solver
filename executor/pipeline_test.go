@@ -1744,6 +1744,87 @@ func TestReadPRDescription_StripsMarkdownHeading(t *testing.T) {
 	}
 }
 
+// --- parsePRContent ---
+
+func TestParsePRContent_LabeledTitle(t *testing.T) {
+	content := "# PR Description\n\n**Title:** Fix AAP OAuth app configuration precedence\n\n**Jira Ticket:** EDM-3430"
+	title, body := executor.ParsePRContent(content)
+
+	if title != "Fix AAP OAuth app configuration precedence" {
+		t.Errorf("Title = %q, want %q", title, "Fix AAP OAuth app configuration precedence")
+	}
+	// Body should exclude metadata lines.
+	if strings.Contains(body, "PR Description") {
+		t.Error("body should not contain generic heading")
+	}
+	if strings.Contains(body, "Jira Ticket") {
+		t.Error("body should not contain Jira ticket metadata")
+	}
+}
+
+func TestParsePRContent_LabeledTitlePlainText(t *testing.T) {
+	content := "Title: Fix the bug\n\nSome body content."
+	title, body := executor.ParsePRContent(content)
+
+	if title != "Fix the bug" {
+		t.Errorf("Title = %q, want %q", title, "Fix the bug")
+	}
+	if body != "Some body content." {
+		t.Errorf("Body = %q, want %q", body, "Some body content.")
+	}
+}
+
+func TestParsePRContent_HeadingSection(t *testing.T) {
+	content := "## Title\n\n**[EDM-3430]: Fix OAuth config**\n\n## Summary\nThe fix addresses the issue."
+	title, body := executor.ParsePRContent(content)
+
+	if title != "[EDM-3430]: Fix OAuth config" {
+		t.Errorf("Title = %q, want %q", title, "[EDM-3430]: Fix OAuth config")
+	}
+	if !strings.Contains(body, "The fix addresses") {
+		t.Errorf("Body should contain summary content, got: %q", body)
+	}
+	if strings.Contains(body, "## Title") {
+		t.Error("body should not contain the ## Title heading")
+	}
+}
+
+func TestParsePRContent_FallbackFirstLine(t *testing.T) {
+	content := "Fix NPE in UserService\n\n## Summary\nAdded null check."
+	title, body := executor.ParsePRContent(content)
+
+	if title != "Fix NPE in UserService" {
+		t.Errorf("Title = %q, want %q", title, "Fix NPE in UserService")
+	}
+	if !strings.Contains(body, "Added null check") {
+		t.Errorf("Body should contain 'Added null check', got: %q", body)
+	}
+}
+
+func TestParsePRContent_FallbackStripsHeadingPrefix(t *testing.T) {
+	content := "# Fix the bug\n\nBody text."
+	title, body := executor.ParsePRContent(content)
+
+	if title != "Fix the bug" {
+		t.Errorf("Title = %q, want %q", title, "Fix the bug")
+	}
+	if body != "Body text." {
+		t.Errorf("Body = %q, want %q", body, "Body text.")
+	}
+}
+
+func TestParsePRContent_LabeledTitleWithBody(t *testing.T) {
+	content := "# PR Description\n\n**Title:** Fix the bug\n\n## Summary\nDetailed explanation here."
+	title, body := executor.ParsePRContent(content)
+
+	if title != "Fix the bug" {
+		t.Errorf("Title = %q, want %q", title, "Fix the bug")
+	}
+	if !strings.Contains(body, "Detailed explanation") {
+		t.Errorf("Body should contain summary, got: %q", body)
+	}
+}
+
 // --- buildPRContent ---
 
 func TestBuildPRContent_Default(t *testing.T) {
@@ -1822,6 +1903,19 @@ func TestBuildPRContent_AITitleWithTicketKey(t *testing.T) {
 	}
 	title, _ := executor.BuildPRContent(workItem, "EDM-2747", "", aiPR)
 	want := "EDM-2747: Differentiate manual stop from completion"
+	if title != want {
+		t.Errorf("Title = %q, want %q (no duplicate key)", title, want)
+	}
+}
+
+func TestBuildPRContent_AITitleWithBracketedTicketKey(t *testing.T) {
+	workItem := &models.WorkItem{Key: "EDM-3430", Summary: "Fix bug"}
+	aiPR := &executor.PRDescription{
+		Title: "[EDM-3430]: Fix OAuth config precedence",
+		Body:  "Root cause analysis.",
+	}
+	title, _ := executor.BuildPRContent(workItem, "EDM-3430", "", aiPR)
+	want := "EDM-3430: Fix OAuth config precedence"
 	if title != want {
 		t.Errorf("Title = %q, want %q (no duplicate key)", title, want)
 	}
@@ -2297,6 +2391,122 @@ func TestFeedbackPipeline_ForkMode(t *testing.T) {
 	}
 	if commitRepo != "repo" {
 		t.Errorf("CommitChanges repo = %q, want repo", commitRepo)
+	}
+}
+
+// --- Feedback ErrNoChanges final attempt ---
+
+func TestFeedbackPipeline_ErrNoChanges_NonFinalAttempt_ReturnsError(t *testing.T) {
+	d := newTestDeps(t)
+
+	d.git.GetPRForBranchFunc = func(owner, repo, head string) (*models.PRDetails, error) {
+		return &models.PRDetails{
+			Number: 42, Title: "Fix a bug",
+			Branch: head, URL: "https://github.com/org/repo/pull/42",
+		}, nil
+	}
+	d.git.GetPRCommentsFunc = func(owner, repo string, number int, since time.Time) ([]models.PRComment, error) {
+		return []models.PRComment{
+			{ID: 10, Author: models.Author{Username: "reviewer"}, Body: "Fix this"},
+		}, nil
+	}
+	d.git.CommitChangesFunc = func(_, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
+		return "", services.ErrNoChanges
+	}
+
+	p := d.pipelineWithConfig(t, executor.Config{
+		BotUsername:     "ai-bot",
+		DefaultProvider: "claude",
+		AIAPIKeys:       map[string]string{"claude": "test-key"},
+		MaxRetries:      3,
+	})
+
+	// AttemptNum 1 (of 4 total) — not the final attempt.
+	_, err := p.Execute(context.Background(), &jobmanager.Job{
+		ID: "j1", TicketKey: "PROJ-1", Type: jobmanager.JobTypeFeedback,
+		AttemptNum: 1,
+	})
+
+	if err == nil {
+		t.Fatal("expected error on non-final attempt with ErrNoChanges")
+	}
+	if !strings.Contains(err.Error(), "no committable changes") {
+		t.Errorf("error = %q, should mention 'no committable changes'", err.Error())
+	}
+}
+
+func TestFeedbackPipeline_ErrNoChanges_FinalAttempt_PostsUnableToAddress(t *testing.T) {
+	d := newTestDeps(t)
+
+	d.git.GetPRForBranchFunc = func(owner, repo, head string) (*models.PRDetails, error) {
+		return &models.PRDetails{
+			Number: 42, Title: "Fix a bug",
+			Branch: head, URL: "https://github.com/org/repo/pull/42",
+		}, nil
+	}
+
+	reviewComment := models.PRComment{
+		ID: 10, Author: models.Author{Username: "reviewer"},
+		Body: "Fix this", IsReviewComment: true,
+	}
+	conversationComment := models.PRComment{
+		ID: 20, Author: models.Author{Username: "reviewer"},
+		Body: "Also fix that", IsReviewComment: false,
+	}
+
+	d.git.GetPRCommentsFunc = func(owner, repo string, number int, since time.Time) ([]models.PRComment, error) {
+		return []models.PRComment{reviewComment, conversationComment}, nil
+	}
+	d.git.CommitChangesFunc = func(_, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
+		return "", services.ErrNoChanges
+	}
+
+	var reviewReplies []int64
+	d.git.ReplyToCommentFunc = func(owner, repo string, prNumber int, commentID int64, body string) error {
+		reviewReplies = append(reviewReplies, commentID)
+		if !strings.Contains(body, "unable to produce code changes") {
+			t.Errorf("review reply body = %q, should mention inability", body)
+		}
+		return nil
+	}
+
+	var issueCommentBodies []string
+	d.git.PostIssueCommentFunc = func(owner, repo string, prNumber int, body string) error {
+		issueCommentBodies = append(issueCommentBodies, body)
+		return nil
+	}
+
+	p := d.pipelineWithConfig(t, executor.Config{
+		BotUsername:     "ai-bot",
+		DefaultProvider: "claude",
+		AIAPIKeys:       map[string]string{"claude": "test-key"},
+		MaxRetries:      3,
+	})
+
+	// AttemptNum 4 (> MaxRetries 3) — final attempt.
+	_, err := p.Execute(context.Background(), &jobmanager.Job{
+		ID: "j1", TicketKey: "PROJ-1", Type: jobmanager.JobTypeFeedback,
+		AttemptNum: 4,
+	})
+
+	if err != nil {
+		t.Fatalf("expected nil error on final attempt, got %v", err)
+	}
+
+	// Verify review comment got a threaded reply.
+	if len(reviewReplies) != 1 || reviewReplies[0] != 10 {
+		t.Errorf("review replies = %v, want [10]", reviewReplies)
+	}
+
+	// Verify conversation comment got an issue comment with addressed marker.
+	if len(issueCommentBodies) != 1 {
+		t.Fatalf("expected 1 issue comment, got %d", len(issueCommentBodies))
+	}
+	if !strings.Contains(issueCommentBodies[0], "unable to produce code changes") {
+		t.Error("issue comment should mention inability")
+	}
+	if !strings.Contains(issueCommentBodies[0], "<!-- addressed: 20 -->") {
+		t.Errorf("issue comment should contain addressed marker for comment 20, got: %q", issueCommentBodies[0])
 	}
 }
 

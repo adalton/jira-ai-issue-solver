@@ -723,6 +723,10 @@ func buildPRContent(workItem *models.WorkItem, ticketKey, titlePrefix string, ai
 			aiTitle = cut
 		} else if cut, ok := strings.CutPrefix(aiTitle, ticketKey+" "); ok {
 			aiTitle = cut
+		} else if cut, ok := strings.CutPrefix(aiTitle, "["+ticketKey+"]: "); ok {
+			aiTitle = cut
+		} else if cut, ok := strings.CutPrefix(aiTitle, "["+ticketKey+"] "); ok {
+			aiTitle = cut
 		}
 		title = fmt.Sprintf("%s: %s", ticketKey, aiTitle)
 		body = fmt.Sprintf("Resolves %s", ticketKey)

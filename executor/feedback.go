@@ -214,6 +214,11 @@ func (p *Pipeline) executeFeedback(ctx context.Context, job *jobmanager.Job) (re
 		commitMsg, wsPath, workItem.Assignee, importExcludes,
 	)
 	if errors.Is(err, services.ErrNoChanges) {
+		if p.isFinalAttempt(job.AttemptNum) {
+			logger.Info("Final attempt produced no changes, posting unable-to-address replies")
+			p.replyUnableToAddress(logger, settings, prDetails, newComments)
+			return result, nil
+		}
 		return result, fmt.Errorf("AI produced no committable changes (exit code: %d)", exitCode)
 	}
 	if err != nil {
@@ -366,6 +371,46 @@ func (p *Pipeline) replyToComments(
 			// Conversation comments don't support threading, so
 			// embed a marker that CategorizeComments can parse to
 			// detect addressed comments.
+			markedBody := fmt.Sprintf("%s\n%s", replyBody, commentfilter.AddressedMarker(c.ID))
+			if err := p.git.PostIssueComment(
+				settings.Owner, settings.Repo, prDetails.Number, markedBody); err != nil {
+				logger.Warn("Failed to reply to conversation comment",
+					zap.Int64("comment_id", c.ID),
+					zap.Error(err))
+			}
+		}
+	}
+}
+
+// isFinalAttempt returns true when the current attempt is the last
+// one before the job manager stops retrying. This accounts for the
+// coordinator's check (failureCounts > maxRetries), which allows
+// maxRetries+1 total attempts.
+func (p *Pipeline) isFinalAttempt(attemptNum int) bool {
+	return p.cfg.MaxRetries >= 0 && attemptNum > p.cfg.MaxRetries
+}
+
+// replyUnableToAddress posts a reply to each comment indicating that
+// the bot was unable to make changes after multiple attempts. The
+// reply includes an addressed marker so the comment is not picked up
+// again by future scanner cycles.
+func (p *Pipeline) replyUnableToAddress(
+	logger *zap.Logger,
+	settings *models.ProjectSettings,
+	prDetails *models.PRDetails,
+	comments []models.PRComment,
+) {
+	for _, c := range comments {
+		replyBody := "I was unable to produce code changes to address this comment after multiple attempts."
+
+		if c.IsReviewComment {
+			if err := p.git.ReplyToComment(
+				settings.Owner, settings.Repo, prDetails.Number, c.ID, replyBody); err != nil {
+				logger.Warn("Failed to reply to review comment",
+					zap.Int64("comment_id", c.ID),
+					zap.Error(err))
+			}
+		} else {
 			markedBody := fmt.Sprintf("%s\n%s", replyBody, commentfilter.AddressedMarker(c.ID))
 			if err := p.git.PostIssueComment(
 				settings.Owner, settings.Repo, prDetails.Number, markedBody); err != nil {

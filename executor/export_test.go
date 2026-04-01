@@ -36,6 +36,11 @@ func ReadPRDescription(dir string) *PRDescription {
 	return readPRDescription(dir)
 }
 
+// ParsePRContent exposes parsePRContent for testing.
+func ParsePRContent(content string) (string, string) {
+	return parsePRContent(content)
+}
+
 // BuildPRContent exposes buildPRContent for testing.
 func BuildPRContent(workItem *models.WorkItem, ticketKey, titlePrefix string, aiPR *PRDescription) (string, string) {
 	return buildPRContent(workItem, ticketKey, titlePrefix, aiPR)

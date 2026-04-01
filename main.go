@@ -130,6 +130,7 @@ func main() {
 			KnownBotUsernames:  config.GitHub.KnownBotUsernames,
 			MaxThreadDepth:     config.GitHub.MaxThreadDepth,
 			DefaultGeminiModel: config.Gemini.Model,
+			MaxRetries:         config.Guardrails.MaxRetries,
 		},
 		issueTracker,
 		gitService,

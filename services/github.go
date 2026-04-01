@@ -551,7 +551,7 @@ func (s *GitHubServiceImpl) createVerifiedCommitFromLocalHEAD(owner, repo, branc
 
 	if len(treeEntries) == 0 {
 		s.logger.Info("No changes from first parent; nothing to commit")
-		return "", nil
+		return "", ErrNoChanges
 	}
 
 	// Create a new tree on GitHub
