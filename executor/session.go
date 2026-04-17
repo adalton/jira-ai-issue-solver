@@ -64,7 +64,8 @@ func readPRDescription(dir string) *PRDescription {
 	}
 
 	title, body := parsePRContent(content)
-	if title == "" {
+
+	if title == "" && body == "" {
 		return nil
 	}
 
@@ -100,7 +101,25 @@ func parsePRContent(content string) (title, body string) {
 
 	// Fallback: first non-empty line is the title, rest is body.
 	first, rest, _ := strings.Cut(content, "\n")
-	return cleanPRTitle(strings.TrimSpace(first)), strings.TrimSpace(rest)
+	cleaned := cleanPRTitle(strings.TrimSpace(first))
+	if isGenericHeading(cleaned) {
+		return "", content
+	}
+	return cleaned, strings.TrimSpace(rest)
+}
+
+// isGenericHeading returns true for section headings that are not
+// meaningful PR titles (e.g., "Summary", "Description"). When the AI
+// writes pr.md without a title line, the first line is typically one
+// of these headings.
+func isGenericHeading(title string) bool {
+	switch strings.ToLower(title) {
+	case "summary", "description", "overview", "details",
+		"test plan", "testing", "changes", "background",
+		"context", "problem", "solution", "notes":
+		return true
+	}
+	return false
 }
 
 // extractLabeledTitle checks if a line contains a "Title:" label
