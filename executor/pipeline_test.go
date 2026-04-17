@@ -357,7 +357,7 @@ func TestExecuteNewTicket_ContainerStartFails(t *testing.T) {
 
 func TestExecuteNewTicket_CommitFails(t *testing.T) {
 	d := newTestDeps(t)
-	d.git.CommitChangesFunc = func(_, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
+	d.git.CommitChangesFunc = func(_, _, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
 		return "", errors.New("API rate limit")
 	}
 
@@ -578,7 +578,7 @@ func TestExecuteNewTicket_CoAuthorAttribution(t *testing.T) {
 	}
 
 	var receivedCoAuthor *models.Author
-	d.git.CommitChangesFunc = func(_, _, _, _, _ string, coAuthor *models.Author, _ []string) (string, error) {
+	d.git.CommitChangesFunc = func(_, _, _, _, _, _ string, coAuthor *models.Author, _ []string) (string, error) {
 		receivedCoAuthor = coAuthor
 		return "abc123", nil
 	}
@@ -604,7 +604,7 @@ func TestExecuteNewTicket_NoAssignee_NilCoAuthor(t *testing.T) {
 	d := newTestDeps(t)
 
 	var receivedCoAuthor *models.Author
-	d.git.CommitChangesFunc = func(_, _, _, _, _ string, coAuthor *models.Author, _ []string) (string, error) {
+	d.git.CommitChangesFunc = func(_, _, _, _, _, _ string, coAuthor *models.Author, _ []string) (string, error) {
 		receivedCoAuthor = coAuthor
 		return "abc123", nil
 	}
@@ -1130,7 +1130,7 @@ func TestExecuteNewTicket_VertexAI_NotUsedForGemini(t *testing.T) {
 
 func TestExecuteNewTicket_ErrNoChanges_ReturnsError(t *testing.T) {
 	d := newTestDeps(t)
-	d.git.CommitChangesFunc = func(_, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
+	d.git.CommitChangesFunc = func(_, _, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
 		return "", services.ErrNoChanges
 	}
 
@@ -2441,9 +2441,10 @@ func TestNewTicketPipeline_ForkMode(t *testing.T) {
 		}, nil
 	}
 
-	// Capture arguments to verify fork owner is used.
-	var commitOwner, commitRepo string
-	d.git.CommitChangesFunc = func(owner, repo, branch, message, dir string, coAuthor *models.Author, importExcludes []string) (string, error) {
+	// Capture arguments to verify fork owner and upstream owner.
+	var commitUpstreamOwner, commitOwner, commitRepo string
+	d.git.CommitChangesFunc = func(upstreamOwner, owner, repo, _, _, _ string, _ *models.Author, _ []string) (string, error) {
+		commitUpstreamOwner = upstreamOwner
 		commitOwner = owner
 		commitRepo = repo
 		return "abc123", nil
@@ -2497,6 +2498,11 @@ func TestNewTicketPipeline_ForkMode(t *testing.T) {
 	}
 	if !strings.Contains(prParams.Head, "PROJ-123") {
 		t.Errorf("PR Head = %q, should contain ticket key", prParams.Head)
+	}
+
+	// Verify upstream owner is passed for tree resolution.
+	if commitUpstreamOwner != "upstream-org" {
+		t.Errorf("CommitChanges upstreamOwner = %q, want upstream-org", commitUpstreamOwner)
 	}
 
 	// Verify result is valid.
@@ -2712,8 +2718,9 @@ func TestFeedbackPipeline_ForkMode(t *testing.T) {
 	}
 
 	// Track CommitChanges owner.
-	var commitOwner, commitRepo string
-	d.git.CommitChangesFunc = func(owner, repo, branch, message, dir string, coAuthor *models.Author, importExcludes []string) (string, error) {
+	var commitUpstreamOwner, commitOwner, commitRepo string
+	d.git.CommitChangesFunc = func(upstreamOwner, owner, repo, _, _, _ string, _ *models.Author, _ []string) (string, error) {
+		commitUpstreamOwner = upstreamOwner
 		commitOwner = owner
 		commitRepo = repo
 		return "abc123", nil
@@ -2750,7 +2757,10 @@ func TestFeedbackPipeline_ForkMode(t *testing.T) {
 		t.Error("FetchRemote should be called in fork mode")
 	}
 
-	// Verify CommitChanges uses fork owner.
+	// Verify CommitChanges uses fork owner with upstream for tree lookup.
+	if commitUpstreamOwner != "upstream-org" {
+		t.Errorf("CommitChanges upstreamOwner = %q, want upstream-org", commitUpstreamOwner)
+	}
 	if commitOwner != "bot-fork" {
 		t.Errorf("CommitChanges owner = %q, want bot-fork", commitOwner)
 	}
@@ -2775,7 +2785,7 @@ func TestFeedbackPipeline_ErrNoChanges_NonFinalAttempt_ReturnsError(t *testing.T
 			{ID: 10, Author: models.Author{Username: "reviewer"}, Body: "Fix this"},
 		}, nil
 	}
-	d.git.CommitChangesFunc = func(_, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
+	d.git.CommitChangesFunc = func(_, _, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
 		return "", services.ErrNoChanges
 	}
 
@@ -2822,7 +2832,7 @@ func TestFeedbackPipeline_ErrNoChanges_FinalAttempt_PostsUnableToAddress(t *test
 	d.git.GetPRCommentsFunc = func(owner, repo string, number int, since time.Time) ([]models.PRComment, error) {
 		return []models.PRComment{reviewComment, conversationComment}, nil
 	}
-	d.git.CommitChangesFunc = func(_, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
+	d.git.CommitChangesFunc = func(_, _, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
 		return "", services.ErrNoChanges
 	}
 
@@ -2972,7 +2982,7 @@ func newTestDeps(t *testing.T) *testDeps {
 			HasChangesFunc: func(dir string) (bool, error) {
 				return true, nil
 			},
-			CommitChangesFunc: func(_, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
+			CommitChangesFunc: func(_, _, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
 				return "abc123", nil
 			},
 			CreatePRFunc: func(params models.PRParams) (*models.PR, error) {

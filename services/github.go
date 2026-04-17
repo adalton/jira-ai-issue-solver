@@ -482,7 +482,7 @@ func (s *GitHubServiceImpl) CreateBranch(directory, branchName string) error {
 //
 // If coAuthor is non-nil, a Co-authored-by trailer is appended to the
 // commit message using the author's Name and Email.
-func (s *GitHubServiceImpl) CommitChanges(owner, repo, branch, message, dir string, coAuthor *models.Author, importExcludes []string) (string, error) {
+func (s *GitHubServiceImpl) CommitChanges(upstreamOwner, owner, repo, branch, message, dir string, coAuthor *models.Author, importExcludes []string) (string, error) {
 	// Extract co-author name/email (empty strings when nil).
 	var coAuthorName, coAuthorEmail string
 	if coAuthor != nil {
@@ -512,12 +512,17 @@ func (s *GitHubServiceImpl) CommitChanges(owner, repo, branch, message, dir stri
 	}
 
 	excludes := mergeExcludes(importExcludes)
-	return s.createVerifiedCommitFromLocalHEAD(owner, repo, branch, message, dir, coAuthorName, coAuthorEmail, excludes)
+	return s.createVerifiedCommitFromLocalHEAD(upstreamOwner, owner, repo, branch, message, dir, coAuthorName, coAuthorEmail, excludes)
 }
 
-// createVerifiedCommitFromLocalHEAD creates a verified commit via API from local HEAD commit
-// Preserves merge commit structure if HEAD is a merge commit
-func (s *GitHubServiceImpl) createVerifiedCommitFromLocalHEAD(owner, repo, branchName, message, directory string, coAuthorName, coAuthorEmail string, excludes []string) (string, error) {
+// createVerifiedCommitFromLocalHEAD creates a verified commit via API from local HEAD commit.
+// Preserves merge commit structure if HEAD is a merge commit.
+//
+// upstreamOwner is the GitHub owner of the upstream repository (e.g.,
+// "flightctl"). In non-fork workflows it equals owner. In fork
+// workflows it identifies the repo where the parent commit originated
+// so the tree can be resolved there when the fork API cannot find it.
+func (s *GitHubServiceImpl) createVerifiedCommitFromLocalHEAD(upstreamOwner, owner, repo, branchName, message, directory string, coAuthorName, coAuthorEmail string, excludes []string) (string, error) {
 	token, err := s.getAuthTokenForRepo(owner, repo)
 	if err != nil {
 		return "", fmt.Errorf("failed to get auth token: %w", err)
@@ -542,6 +547,23 @@ func (s *GitHubServiceImpl) createVerifiedCommitFromLocalHEAD(owner, repo, branc
 	// exist locally). In that case, fall back to the remote branch
 	// HEAD so we can still create a valid API commit.
 	baseTreeSHA, err := s.getTreeSHAFromCommit(owner, repo, firstParent, token)
+	if err != nil {
+		// In fork workflows the parent commit originated from
+		// upstream — try resolving the tree there before falling
+		// back to the (potentially stale) fork branch HEAD.
+		if upstreamOwner != owner {
+			upstreamToken, tokenErr := s.getAuthTokenForRepo(upstreamOwner, repo)
+			if tokenErr == nil {
+				if treeSHA, treeErr := s.getTreeSHAFromCommit(upstreamOwner, repo, firstParent, upstreamToken); treeErr == nil {
+					s.logger.Info("Resolved parent tree from upstream repo",
+						zap.String("upstream", upstreamOwner+"/"+repo),
+						zap.String("parent", firstParent))
+					baseTreeSHA = treeSHA
+					err = nil
+				}
+			}
+		}
+	}
 	if err != nil {
 		remoteSHA, branchExists, remoteErr := s.getBranchBaseCommit(owner, repo, branchName, token)
 		if remoteErr != nil || !branchExists {

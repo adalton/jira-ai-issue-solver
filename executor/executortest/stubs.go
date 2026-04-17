@@ -40,7 +40,7 @@ type StubGitService struct {
 	SwitchBranchFunc       func(dir, name string) error
 	RemoteBranchExistsFunc func(owner, repo, branch string) (bool, error)
 	HasChangesFunc         func(dir string) (bool, error)
-	CommitChangesFunc      func(owner, repo, branch, message, dir string, coAuthor *models.Author, importExcludes []string) (string, error)
+	CommitChangesFunc      func(upstreamOwner, owner, repo, branch, message, dir string, coAuthor *models.Author, importExcludes []string) (string, error)
 	StripRemoteAuthFunc    func(dir string) error
 	RestoreRemoteAuthFunc  func(dir, owner, repo string) error
 	FetchRemoteFunc        func(dir string) error
@@ -88,9 +88,9 @@ func (s *StubGitService) HasChanges(dir string) (bool, error) {
 	return false, nil
 }
 
-func (s *StubGitService) CommitChanges(owner, repo, branch, message, dir string, coAuthor *models.Author, importExcludes []string) (string, error) {
+func (s *StubGitService) CommitChanges(upstreamOwner, owner, repo, branch, message, dir string, coAuthor *models.Author, importExcludes []string) (string, error) {
 	if s.CommitChangesFunc != nil {
-		return s.CommitChangesFunc(owner, repo, branch, message, dir, coAuthor, importExcludes)
+		return s.CommitChangesFunc(upstreamOwner, owner, repo, branch, message, dir, coAuthor, importExcludes)
 	}
 	return "", nil
 }

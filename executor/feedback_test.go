@@ -23,7 +23,7 @@ func TestExecuteFeedback_HappyPath(t *testing.T) {
 	d := newFeedbackDeps(t)
 
 	var commitBranch string
-	d.git.CommitChangesFunc = func(_, _, branch, _, _ string, _ *models.Author, _ []string) (string, error) {
+	d.git.CommitChangesFunc = func(_, _, _, branch, _, _ string, _ *models.Author, _ []string) (string, error) {
 		commitBranch = branch
 		return "abc1234567890", nil
 	}
@@ -75,7 +75,7 @@ func TestExecuteFeedback_HappyPath(t *testing.T) {
 func TestExecuteFeedback_AIGeneratedReplies(t *testing.T) {
 	d := newFeedbackDeps(t)
 
-	d.git.CommitChangesFunc = func(_, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
+	d.git.CommitChangesFunc = func(_, _, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
 		return "abc1234567890", nil
 	}
 
@@ -113,7 +113,7 @@ func TestExecuteFeedback_AIGeneratedReplies(t *testing.T) {
 func TestExecuteFeedback_FallbackWhenNoResponsesFile(t *testing.T) {
 	d := newFeedbackDeps(t)
 
-	d.git.CommitChangesFunc = func(_, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
+	d.git.CommitChangesFunc = func(_, _, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
 		return "def5678901234", nil
 	}
 
@@ -305,7 +305,7 @@ func TestExecuteFeedback_NoNewComments(t *testing.T) {
 
 func TestExecuteFeedback_CommitFails(t *testing.T) {
 	d := newFeedbackDeps(t)
-	d.git.CommitChangesFunc = func(_, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
+	d.git.CommitChangesFunc = func(_, _, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
 		return "", errors.New("API rate limit")
 	}
 
@@ -466,7 +466,7 @@ func TestExecuteFeedback_CoAuthorAttribution(t *testing.T) {
 	}
 
 	var receivedCoAuthor *models.Author
-	d.git.CommitChangesFunc = func(_, _, _, _, _ string, coAuthor *models.Author, _ []string) (string, error) {
+	d.git.CommitChangesFunc = func(_, _, _, _, _, _ string, coAuthor *models.Author, _ []string) (string, error) {
 		receivedCoAuthor = coAuthor
 		return "abc123", nil
 	}
@@ -551,7 +551,7 @@ func TestExecuteFeedback_ConversationCommentUsesPostIssueComment(t *testing.T) {
 			{ID: 100, Author: models.Author{Username: "reviewer"}, Body: "Update docs", IsReviewComment: false},
 		}, nil
 	}
-	d.git.CommitChangesFunc = func(_, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
+	d.git.CommitChangesFunc = func(_, _, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
 		return "abc1234567890", nil
 	}
 
@@ -594,7 +594,7 @@ func TestExecuteFeedback_ReviewCommentUsesReplyToComment(t *testing.T) {
 			{ID: 1, Author: models.Author{Username: "reviewer"}, Body: "Fix this line", IsReviewComment: true},
 		}, nil
 	}
-	d.git.CommitChangesFunc = func(_, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
+	d.git.CommitChangesFunc = func(_, _, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
 		return "def5678901234", nil
 	}
 
@@ -632,7 +632,7 @@ func TestExecuteFeedback_MixedCommentTypes(t *testing.T) {
 			{ID: 2, Author: models.Author{Username: "reviewer"}, Body: "Update readme", IsReviewComment: false},
 		}, nil
 	}
-	d.git.CommitChangesFunc = func(_, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
+	d.git.CommitChangesFunc = func(_, _, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
 		return "abc1234567890", nil
 	}
 
@@ -1038,7 +1038,7 @@ func TestExecuteFeedback_AuthRestoredOnExecFailure(t *testing.T) {
 
 func TestExecuteFeedback_ErrNoChanges_ReturnsError(t *testing.T) {
 	d := newFeedbackDeps(t)
-	d.git.CommitChangesFunc = func(_, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
+	d.git.CommitChangesFunc = func(_, _, _, _, _, _ string, _ *models.Author, _ []string) (string, error) {
 		return "", services.ErrNoChanges
 	}
 

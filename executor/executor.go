@@ -112,10 +112,16 @@ type GitService interface {
 	// CommitChanges creates a verified commit via the GitHub API
 	// from local workspace changes. Returns the commit SHA.
 	// Returns services.ErrNoChanges if all changes are bot
-	// artifacts and there is nothing to commit. importExcludes
-	// lists additional directories (from import config) to exclude
-	// from commits beyond the built-in .ai-bot/ exclusion.
-	CommitChanges(owner, repo, branch, message, dir string,
+	// artifacts and there is nothing to commit.
+	//
+	// upstreamOwner is the GitHub owner of the upstream repository.
+	// In non-fork workflows it equals owner. In fork workflows it
+	// identifies where the parent commit originated so the tree
+	// can be resolved there when the fork API cannot find it.
+	// importExcludes lists additional directories (from import
+	// config) to exclude from commits beyond the built-in .ai-bot/
+	// exclusion.
+	CommitChanges(upstreamOwner, owner, repo, branch, message, dir string,
 		coAuthor *models.Author, importExcludes []string) (string, error)
 
 	// StripRemoteAuth removes authentication credentials from the
