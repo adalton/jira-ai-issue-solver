@@ -211,6 +211,11 @@ type Config struct {
 	// thread are excluded. Zero or negative disables the limit.
 	MaxThreadDepth int
 
+	// DefaultClaudeModel is the Claude model to use when the
+	// repo-level config doesn't specify one (e.g., "claude-sonnet-4-6").
+	// Empty means Claude Code's built-in default.
+	DefaultClaudeModel string
+
 	// DefaultGeminiModel is the Gemini model to use when the
 	// repo-level config doesn't specify one (e.g., "gemini-2.5-pro").
 	DefaultGeminiModel string

@@ -367,6 +367,12 @@ type Config struct {
 	Claude struct {
 		APIKey string `yaml:"api_key" mapstructure:"api_key"`
 
+		// Model overrides the default Claude model (e.g.,
+		// "claude-sonnet-4-6"). Repo-level .ai-bot/config.yaml
+		// can further override this. Empty means Claude Code's
+		// built-in default.
+		Model string `yaml:"model" mapstructure:"model"`
+
 		// Vertex AI authentication fields. When set, Claude Code
 		// uses Anthropic's Vertex AI integration instead of the
 		// direct API. All three fields must be set together.
@@ -609,6 +615,7 @@ func LoadConfig(configPath string) (*Config, error) {
 
 	// AI API key configuration
 	bindEnv("claude.api_key")
+	bindEnv("claude.model")
 	bindEnv("claude.vertex_project_id")
 	bindEnv("claude.vertex_region")
 	bindEnv("claude.vertex_credentials_file")

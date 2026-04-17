@@ -139,6 +139,7 @@ func main() {
 			IgnoredUsernames:   config.GitHub.IgnoredUsernames,
 			KnownBotUsernames:  config.GitHub.KnownBotUsernames,
 			MaxThreadDepth:     config.GitHub.MaxThreadDepth,
+			DefaultClaudeModel: config.Claude.Model,
 			DefaultGeminiModel: config.Gemini.Model,
 			MaxRetries:         config.Guardrails.MaxRetries,
 		},

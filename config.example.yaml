@@ -237,6 +237,11 @@ claude:
   vertex_region: "us-east5"
   vertex_credentials_file: "/path/to/gcp-sa-key.json"
 
+  # Optional: Claude model override (e.g., "claude-sonnet-4-6").
+  # Repo-level .ai-bot/config.yaml can further override this.
+  # Empty means Claude Code's built-in default.
+  # model: "claude-sonnet-4-6"
+
 # Gemini configuration — passed to the container as environment variables.
 gemini:
   api_key: "your-gemini-api-key-here"
