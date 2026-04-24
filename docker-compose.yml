@@ -10,23 +10,26 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # Mount configuration file
+      # Mount configuration file (read-only)
       - ./config.yaml:/app/config.yaml:ro
-      # Mount temp directory for persistence
-      - jira_ai_temp:/app/temp
+      # Mount GitHub App private key (read-only)
+      # The path inside the container must match github.private_key_path in config.yaml
+      - ./keys/github-app.private-key.pem:/etc/bot/key.pem:ro
+      # Workspace directory (read-write — the bot clones repos here)
+      - ai_bot_workspaces:/var/lib/ai-bot/workspaces
     environment:
       # These can be overridden by creating a .env file
       - TZ=UTC
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "-qO/dev/null", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    # Security: run as non-root user (already set in Dockerfile)
+    # Security: run as non-root user (matches Dockerfile)
     user: "1001:0"
-    # Resource limits
+    # Resource limits (for the bot itself, not AI containers)
     deploy:
       resources:
         limits:
@@ -37,5 +40,5 @@ services:
           cpus: '0.25'
 
 volumes:
-  jira_ai_temp:
-    driver: local 
+  ai_bot_workspaces:
+    driver: local

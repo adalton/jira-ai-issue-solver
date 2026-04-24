@@ -18,28 +18,37 @@ pull requests with suggested solutions.
 
 Choose your path based on your role:
 
-### 👤 For Contributors
+### For Operators
+
+**Want to deploy and run the bot?**
+
+Start here: **[Operator Guide](docs/operator-guide.md)**
+
+End-to-end walkthrough: prerequisites, Jira and GitHub setup, configuration,
+running the bot, and onboarding your team.
+
+### For Contributors
 
 **Want to work on Jira tickets assigned to you?**
 
-→ **[Contributor Setup Guide](docs/contributor-setup.md)** _(2 minutes to set up!)_
+**[Contributor Setup Guide](docs/contributor-setup.md)** _(2 minutes to set up!)_
 
 Install the GitHub App on your fork and start getting AI-generated PRs for your
 tickets.
 
-### 🔧 For Administrators
+### For Administrators
 
-**Setting up the bot for your organization?**
+**Setting up the GitHub App for your organization?**
 
-→ **[Admin Setup Guide](docs/admin-setup.md)**
+**[Admin Setup Guide](docs/admin-setup.md)**
 
 Step-by-step instructions for creating and configuring the GitHub App.
 
-### 📚 For the Curious
+### For the Curious
 
 **Want to understand how it all works?**
 
-→ **[Architecture & Workflow Guide](docs/architecture.md)**
+**[Architecture & Workflow Guide](docs/architecture.md)**
 
 Comprehensive guide explaining the fork-based workflow, GitHub App
 authentication, and system architecture.
