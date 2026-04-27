@@ -105,7 +105,7 @@ chmod 600 ~/keys/github-app.private-key.pem
 
 > **Important:** The app must be installed on the **upstream repository**
 > (where PRs are opened). Contributors will also install it on their forks
-> — see [Step 8](#step-8-onboard-your-team).
+> — see [Step 9](#step-9-onboard-your-team).
 
 ## Step 3: Get an AI Provider API Key
 
@@ -141,11 +141,18 @@ before running the bot.
 The bot transitions tickets through three states. You need to know the exact
 status names in your Jira workflow (they are **case-sensitive**):
 
-| Bot state | What it means | Example status names |
-|-----------|---------------|---------------------|
-| `todo` | Ticket is ready for the bot to pick up | "To Do", "Open", "Backlog" |
-| `in_progress` | Bot is working on it | "In Progress", "Development" |
-| `in_review` | PR is open, waiting for human review | "In Review", "Code Review" |
+| Bot state | What it means |
+|-----------|---------------|
+| `todo` | Ticket is ready for the bot to pick up |
+| `in_progress` | Bot is working on it |
+| `in_review` | PR is open, waiting for human review |
+
+The actual status names depend on the Jira issue template your project uses.
+For example, a common Red Hat template uses:
+`NEW`, `ASSIGNED`, `POST`, `MODIFIED`, `VERIFIED`, `RELEASE_PENDING`, `CLOSED`
+— where the bot would map `todo` → "NEW", `in_progress` → "ASSIGNED",
+`in_review` → "POST". Other projects might use "To Do", "In Progress",
+"In Review".
 
 To find your exact status names:
 
@@ -154,9 +161,8 @@ To find your exact status names:
 3. Note the exact names (including capitalization and spacing)
 
 > **Different ticket types can have different statuses.** For example, Bugs
-> might use "Open" → "In Progress" → "Code Review" while Stories use
-> "Backlog" → "Development" → "Testing". The bot supports per-type
-> configuration.
+> might use "NEW" → "ASSIGNED" → "POST" while Stories use "Backlog" →
+> "Development" → "Testing". The bot supports per-type configuration.
 
 ### 4b: Ensure the Components Field Exists
 
@@ -170,16 +176,30 @@ least one component defined.
 
 These component names will appear in your configuration file.
 
-### 4c: (Optional) Create a Custom Field for PR URLs
+### 4c: Set Up a PR URL Field
 
-By default, the bot posts PR URLs as Jira comments with a `[AI-BOT-PR]` tag.
-If you'd prefer a dedicated field:
+The bot needs a way to record PR URLs on tickets for traceability — both so
+humans can find the PR from the ticket and so the feedback scanner can find
+the PR to monitor for review comments.
+
+Without a dedicated field, the bot falls back to posting PR URLs as Jira
+comments with a `[AI-BOT-PR]` tag. This works, but a dedicated field is
+more reliable and easier to query.
+
+**Check if a suitable field already exists:**
+
+1. Open a ticket in the target project and look for a field like "Git Pull
+   Request", "Pull Request URL", or similar
+2. If your project template already includes one, note the exact field name
+
+**If no field exists, create one:**
 
 1. Go to **Jira Settings** → **Issues** → **Custom fields**
 2. Create a **URL** or **Text** field named something like "Git Pull Request"
 3. Add it to the relevant issue screens
-4. Note the exact field name — you'll use it in the `git_pull_request_field_name`
-   config setting
+
+Note the exact field name — you'll use it in the `git_pull_request_field_name`
+config setting.
 
 ### 4d: Map Assignees to GitHub Usernames
 
@@ -213,7 +233,7 @@ your project.
 Here's a real-world example for a Go project using Claude Code:
 
 ```dockerfile
-FROM fedora:41
+FROM fedora:43
 
 # Build tools and system dependencies
 RUN dnf install -y \
@@ -298,8 +318,8 @@ jira:
 > **From [Step 4b](#4b-ensure-the-components-field-exists):** You created
 > Jira components that map to repositories.
 >
-> **From [Step 4c](#4c-optional-create-a-custom-field-for-pr-urls):** You
-> optionally created a custom field for PR URLs.
+> **From [Step 4c](#4c-set-up-a-pr-url-field):** You identified or created
+> a field for PR URLs.
 >
 > **From [Step 5](#step-5-build-a-dev-container-image):** You built a dev
 > container image and noted its name.
@@ -310,20 +330,21 @@ jira:
     - project_keys:
         - "MYPROJ"                               # Your Jira project key
 
-      # Optional: uncomment if you created a custom PR URL field in Step 4c
-      # git_pull_request_field_name: "Git Pull Request"
+      # PR URL field name from Step 4c (recommended for traceability)
+      git_pull_request_field_name: "Git Pull Request"
 
       # Status names must EXACTLY match your Jira workflow (case-sensitive!)
-      # Each ticket type you want the bot to handle needs an entry
+      # Each ticket type you want the bot to handle needs an entry.
+      # These examples use a common Red Hat template; yours will differ.
       status_transitions:
         Bug:
-          todo: "To Do"                          # From Step 4a
-          in_progress: "In Progress"
-          in_review: "In Review"
+          todo: "NEW"                            # From Step 4a
+          in_progress: "ASSIGNED"
+          in_review: "POST"
         Story:
-          todo: "To Do"
-          in_progress: "In Progress"
-          in_review: "In Review"
+          todo: "NEW"
+          in_progress: "ASSIGNED"
+          in_review: "POST"
 
       # Profiles bundle container and instruction settings.
       # Multiple components can share a profile.
@@ -429,7 +450,7 @@ Before moving on, verify these cross-references:
 | `claude.api_key` or `gemini.api_key` | Your AI provider API key | [Step 3](#step-3-get-an-ai-provider-api-key) |
 | `status_transitions` values | Exact Jira workflow status names (case-sensitive) | [Step 4a](#4a-know-your-workflow-statuses) |
 | `components` keys | Jira component names (case-insensitive) | [Step 4b](#4b-ensure-the-components-field-exists) |
-| `git_pull_request_field_name` | Your custom Jira field name (if created) | [Step 4c](#4c-optional-create-a-custom-field-for-pr-urls) |
+| `git_pull_request_field_name` | Your Jira PR URL field name | [Step 4c](#4c-set-up-a-pr-url-field) |
 | `assignee_to_github_username` | Jira email → GitHub username pairs | [Step 4d](#4d-map-assignees-to-github-usernames) |
 | Profile `container.image` | The dev container image you built | [Step 5](#step-5-build-a-dev-container-image) |
 <!-- markdownlint-enable MD013 -->
@@ -577,7 +598,7 @@ bot can push branches there. Send your team a message like:
 > 3. That's it! When you're assigned a ticket with a Components field set,
 >    the bot will create a PR from your fork.
 >
-> Full instructions: [Contributor Setup Guide](docs/contributor-setup.md)
+> Full instructions: [Contributor Setup Guide](contributor-setup.md)
 
 ### Update Configuration for New Contributors
 
@@ -732,14 +753,8 @@ assignee follow the [Contributor Setup Guide](contributor-setup.md).
 
 ### "could not read private key: permission denied"
 
-The container can't read the mounted `.pem` file. Either:
-
-```bash
-# Fix permissions on the host
-chmod 644 ~/keys/github-app.private-key.pem
-```
-
-Or run the container as your host user:
+The container user can't read the mounted `.pem` file. Run the container as
+your host user so the existing `0600` permissions are honored:
 
 ```bash
 podman run -d --name ai-bot -p 8080:8080 \
@@ -748,6 +763,14 @@ podman run -d --name ai-bot -p 8080:8080 \
   -v ~/keys/github-app.private-key.pem:/etc/bot/key.pem:ro \
   -v /var/lib/ai-bot/workspaces:/var/lib/ai-bot/workspaces \
   --replace jira-ai-issue-solver:latest
+```
+
+If you can't change the container user, grant read access via group ownership
+rather than making the key world-readable:
+
+```bash
+chown :$(id -g) ~/keys/github-app.private-key.pem
+chmod 640 ~/keys/github-app.private-key.pem
 ```
 
 ### "failed to get installation ID"
