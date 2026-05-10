@@ -57,7 +57,7 @@ const taskPrompt = "Read /workspace/.ai-bot/task.md and complete the task descri
 
 func buildClaudeCommand(allowedTools, model string) string {
 	var parts []string
-	parts = append(parts, "claude", "--dangerously-skip-permissions")
+	parts = append(parts, "claude", "--dangerously-skip-permissions", "--output-format=stream-json", "--verbose")
 
 	if model != "" {
 		parts = append(parts, "--model", fmt.Sprintf("%q", model))
