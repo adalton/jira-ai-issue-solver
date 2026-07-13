@@ -569,8 +569,18 @@ func (s *GitHubServiceImpl) createVerifiedCommitFromLocalHEAD(upstreamOwner, own
 	// local commits (rebase, merge, or regular commits that only
 	// exist locally). In that case, fall back to the remote branch
 	// HEAD so we can still create a valid API commit.
+	s.logger.Info("Resolving base tree",
+		zap.String("owner", owner),
+		zap.String("repo", repo),
+		zap.String("upstreamOwner", upstreamOwner),
+		zap.String("firstParent", firstParent),
+		zap.Bool("isFork", upstreamOwner != owner))
 	baseTreeSHA, err := s.getTreeSHAFromCommit(owner, repo, firstParent, token)
 	if err != nil {
+		s.logger.Debug("First parent tree not found on fork",
+			zap.String("owner", owner),
+			zap.String("firstParent", firstParent),
+			zap.Error(err))
 		// In fork workflows the parent commit originated from
 		// upstream — try resolving the tree there before falling
 		// back to the (potentially stale) fork branch HEAD.
@@ -580,7 +590,8 @@ func (s *GitHubServiceImpl) createVerifiedCommitFromLocalHEAD(upstreamOwner, own
 				if treeSHA, treeErr := s.getTreeSHAFromCommit(upstreamOwner, repo, firstParent, upstreamToken); treeErr == nil {
 					s.logger.Info("Resolved parent tree from upstream repo",
 						zap.String("upstream", upstreamOwner+"/"+repo),
-						zap.String("parent", firstParent))
+						zap.String("parent", firstParent),
+						zap.String("baseTreeSHA", treeSHA))
 					baseTreeSHA = treeSHA
 					err = nil
 				}
@@ -601,9 +612,11 @@ func (s *GitHubServiceImpl) createVerifiedCommitFromLocalHEAD(upstreamOwner, own
 		resolved := false
 		if mbSHA, mbErr := s.getMergeBase(directory, "origin/"+branchName); mbErr == nil {
 			if treeSHA, treeErr := s.getTreeSHAFromCommit(owner, repo, mbSHA, token); treeErr == nil {
-				s.logger.Debug("Resolved parent via local merge-base",
+				s.logger.Info("Resolved parent via local merge-base",
 					zap.String("localParent", firstParent),
-					zap.String("mergeBase", mbSHA))
+					zap.String("mergeBase", mbSHA),
+					zap.String("baseTreeSHA", treeSHA),
+					zap.String("resolvedFrom", owner+"/"+repo))
 				firstParent = mbSHA
 				parentSHAs = []string{mbSHA}
 				baseTreeSHA = treeSHA
@@ -641,6 +654,13 @@ func (s *GitHubServiceImpl) createVerifiedCommitFromLocalHEAD(upstreamOwner, own
 	}
 
 	// Create a new tree on GitHub
+	s.logger.Info("Creating tree on GitHub",
+		zap.String("owner", owner),
+		zap.String("repo", repo),
+		zap.String("baseTreeSHA", baseTreeSHA),
+		zap.String("firstParent", firstParent),
+		zap.Strings("parentSHAs", parentSHAs),
+		zap.Int("entries", len(treeEntries)))
 	treeSHA, err := s.createTree(owner, repo, baseTreeSHA, treeEntries, token)
 	if err != nil {
 		return "", fmt.Errorf("failed to create tree: %w", err)
@@ -1223,6 +1243,13 @@ func (s *GitHubServiceImpl) createTree(owner, repo, baseTree string, entries []m
 
 	if resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
+		s.logger.Error("Tree creation failed",
+			zap.String("url", url),
+			zap.String("baseTree", baseTree),
+			zap.Int("entries", len(entries)),
+			zap.Int("status", resp.StatusCode),
+			zap.Int("payload_bytes", len(jsonPayload)),
+			zap.String("response", string(body)))
 		return "", fmt.Errorf("failed to create tree: %s, status: %d", string(body), resp.StatusCode)
 	}
 
