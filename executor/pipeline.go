@@ -349,7 +349,8 @@ func (p *Pipeline) executeNewTicket(ctx context.Context, job *jobmanager.Job) (r
 		pr.Number, result.CostUSD, "New ticket", 0)
 
 	if !draft {
-		p.setLifecycleLabel(logger, job.TicketKey, settings.LifecycleLabels, settings.LifecycleLabels.Review)
+		allLabels := models.AllPipelineLabels(settings.FailureLabels, settings.LifecycleLabels)
+		p.setPipelineLabel(logger, job.TicketKey, allLabels, settings.LifecycleLabels.Review)
 		if err := p.tracker.TransitionStatus(job.TicketKey, settings.InReviewStatus); err != nil {
 			logger.Warn("Failed to transition to in-review", zap.Error(err))
 		}
@@ -704,7 +705,8 @@ func (p *Pipeline) handleFailure(logger *zap.Logger, ticketKey string, settings 
 			zap.Error(err))
 	}
 
-	p.setFailureLabel(logger, ticketKey, settings.FailureLabels, settings.FailureLabels.Blocked)
+	allLabels := models.AllPipelineLabels(settings.FailureLabels, settings.LifecycleLabels)
+	p.setPipelineLabel(logger, ticketKey, allLabels, settings.FailureLabels.Blocked)
 
 	if settings.DisableErrorComments {
 		return
@@ -986,7 +988,8 @@ func (p *Pipeline) executeMultiRepoNewTicket(
 	result.ValidationPassed = !sessionDraft
 
 	if !sessionDraft {
-		p.setLifecycleLabel(logger, job.TicketKey, settings.LifecycleLabels, settings.LifecycleLabels.Review)
+		allLabels := models.AllPipelineLabels(settings.FailureLabels, settings.LifecycleLabels)
+		p.setPipelineLabel(logger, job.TicketKey, allLabels, settings.LifecycleLabels.Review)
 		if err := p.tracker.TransitionStatus(job.TicketKey, settings.InReviewStatus); err != nil {
 			logger.Warn("Failed to transition to in-review", zap.Error(err))
 		}
